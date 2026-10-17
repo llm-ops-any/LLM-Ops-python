@@ -87,7 +87,10 @@ watch(
       title: newNode.data.title,
       description: newNode.data.description,
       prompt: newNode.data.prompt,
-      model_config: newNode.data.language_model_config,
+      // 说明：新建节点时前端默认数据用 model_config(与后端 alias 对应)，
+      // 而后端 dict() 输出用的是字段名 language_model_config，
+      // 只取后者会导致新建的LLM节点读不到模型配置、下拉整块不渲染，故两者都要兼容。
+      model_config: newNode.data.model_config ?? newNode.data.language_model_config,
       inputs: cloneInputs.map((input: any) => {
         // 5.1 计算引用的变量值信息
         const ref =

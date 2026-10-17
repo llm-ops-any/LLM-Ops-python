@@ -126,6 +126,9 @@ class Message(db.Model):
         uselist=True,
         foreign_keys=[id],
         primaryjoin="MessageAgentThought.message_id == Message.id",
+        # 说明：不指定排序时数据库按UUID主键返回，运行流程会出现"调用工具→消息→推理"的乱序，
+        #       这里按position(步骤序号)升序返回，保证历史记录与实时流展示顺序一致。
+        order_by="MessageAgentThought.position",
     )
 
 

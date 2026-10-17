@@ -1,0 +1,29 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 敏感文件（绝不进镜像）
+.env
+.env.*
+!.env.example
+
+# 运行时产物（由 compose 挂载卷覆盖）
+storage/
+
+# 非运行时资源
+test/
+docs/
+.git/
+.gitignore
+.idea/
+.vscode/
+*.md
+!requirements*.txt

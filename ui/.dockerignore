@@ -1,0 +1,20 @@
+# 依赖与构建产物（必须排除：宿主机的 node_modules 会覆盖容器内安装的 Linux 版本，导致构建失败）
+node_modules
+dist
+dist-ssr
+
+# 编辑器与系统文件
+.idea
+.vscode
+.DS_Store
+
+# 日志
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 测试与缓存
+coverage
+.vitest
+.cache

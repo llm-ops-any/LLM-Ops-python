@@ -1,0 +1,225 @@
+# =============================================================================
+# 公共环境变量：llmops-api 与 llmops-celery 共用（YAML 锚点，避免重复维护）
+# 所有凭证统一收敛到同目录的 .env 文件，本文件不再出现任何明文密钥。
+# =============================================================================
+x-llmops-common-env: &llmops-common-env
+  # JWT 加密秘钥
+  JWT_SECRET_KEY: "${JWT_SECRET_KEY}"
+  # CSRF 校验开关
+  WTF_CSRF_ENABLED: 'false'
+
+  # SQLAlchemy 数据库配置
+  SQLALCHEMY_DATABASE_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@llmops-db:5432/llmops?client_encoding=utf8"
+  SQLALCHEMY_POOL_SIZE: 30
+  SQLALCHEMY_POOL_RECYCLE: 3600
+  # 生产环境关闭 SQL 回显，避免日志爆炸与性能损耗
+  SQLALCHEMY_ECHO: 'false'
+
+  # Redis 缓存数据库配置
+  REDIS_HOST: llmops-redis
+  REDIS_PORT: 6379
+  REDIS_USERNAME: ''
+  REDIS_PASSWORD: "${REDIS_PASSWORD}"
+  REDIS_DB: 0
+  REDIS_USE_SSL: 'false'
+
+  # Weaviate 向量数据库配置
+  WEAVIATE_HTTP_HOST: llmops-weaviate
+  WEAVIATE_HTTP_PORT: 8080
+  WEAVIATE_GRPC_HOST: llmops-weaviate
+  WEAVIATE_GRPC_PORT: 50051
+  WEAVIATE_API_KEY: "${WEAVIATE_API_KEY}"
+
+  # 腾讯云 COS 对象存储
+  COS_SECRET_ID: "${COS_SECRET_ID}"
+  COS_SECRET_KEY: "${COS_SECRET_KEY}"
+  COS_REGION: "${COS_REGION:-ap-guangzhou}"
+  COS_SCHEME: "${COS_SCHEME:-https}"
+  COS_BUCKET: "${COS_BUCKET}"
+  COS_DOMAIN: "${COS_DOMAIN:-}"
+
+  # Celery 异步队列任务配置
+  CELERY_BROKER_DB: 1
+  CELERY_RESULT_BACKEND_DB: 1
+  CELERY_TASK_IGNORE_RESULT: 'true'
+  CELERY_RESULT_EXPIRES: 3600
+  CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: 'true'
+
+  # Github OAuth 应用秘钥
+  GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID}"
+  GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET}"
+  GITHUB_REDIRECT_URI: "${GITHUB_REDIRECT_URI}"
+
+  # LangSmith 配置（默认关闭，避免把请求数据外发到第三方）
+  LANGCHAIN_TRACING_V2: "${LANGCHAIN_TRACING_V2:-false}"
+  LANGCHAIN_ENDPOINT: "${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}"
+  LANGCHAIN_API_KEY: "${LANGCHAIN_API_KEY}"
+  LANGCHAIN_PROJECT: "${LANGCHAIN_PROJECT:-LLMOpsDev}"
+
+  # HuggingFace 配置
+  TRANSFORMERS_OFFLINE: 1
+
+  # 辅助 Agent 智能体应用 id 标识
+  ASSISTANT_AGENT_ID: "${ASSISTANT_AGENT_ID}"
+
+  # LLM 服务提供者
+  OPENAI_API_KEY: "${OPENAI_API_KEY}"
+  OPENAI_API_BASE: "${OPENAI_API_BASE}"
+  # 知识库向量化模型名（留空则用代码默认值 text-embedding-3-small）
+  EMBEDDINGS_MODEL: "${EMBEDDINGS_MODEL}"
+  # 向量化输出维度（需与本地预置 FAISS 索引维度 1536 对齐，留空则用模型默认维度）
+  EMBEDDINGS_DIMENSIONS: "${EMBEDDINGS_DIMENSIONS}"
+  qianfan_ak: "${qianfan_ak}"
+  qianfan_sk: "${qianfan_sk}"
+  MOONSHOT_API_KEY: "${MOONSHOT_API_KEY}"
+  DASHSCOPE_API_KEY: "${DASHSCOPE_API_KEY}"
+
+  # 工具类 API 秘钥
+  GAODE_API_KEY: "${GAODE_API_KEY}"
+  SERPER_API_KEY: "${SERPER_API_KEY}"
+
+services:
+  llmops-ui:
+    image: llmops-ui:0.1.0
+    build:
+      context: ../ui
+      dockerfile: Dockerfile
+    container_name: llmops-ui
+    restart: always
+    ports:
+      # 仅容器内网访问即可，对外统一走 llmops-nginx
+      - "127.0.0.1:3000:3000"
+
+  llmops-api:
+    image: llmops-api:0.1.0
+    build:
+      context: ../api
+      dockerfile: Dockerfile
+    container_name: llmops-api
+    restart: always
+    volumes:
+      - ./volumes/app/storage:/app/api/storage
+    environment:
+      <<: *llmops-common-env
+      # 模式为 API，代表启用 API 服务
+      MODE: api
+      SERVER_WORKER_AMOUNT: 4
+      SERVER_THREAD_AMOUNT: 4
+      # 数据库迁移配置（仅 api 服务负责迁移，celery 不重复执行）
+      MIGRATION_ENABLED: 'true'
+    ports:
+      # 仅容器内网访问即可，对外统一走 llmops-nginx
+      - "127.0.0.1:5001:5001"
+    depends_on:
+      llmops-db:
+        condition: service_healthy
+      llmops-redis:
+        condition: service_healthy
+      llmops-weaviate:
+        condition: service_started
+
+  llmops-celery:
+    image: llmops-api:0.1.0
+    build:
+      context: ../api
+      dockerfile: Dockerfile
+    container_name: llmops-celery
+    restart: always
+    volumes:
+      - ./volumes/app/storage:/app/api/storage
+    environment:
+      <<: *llmops-common-env
+      # 模式为 celery，代表启用 Celery 异步任务队列
+      MODE: celery
+      CELERY_WORKER_AMOUNT: 4
+      # 迁移由 api 服务负责，celery 不重复执行
+      MIGRATION_ENABLED: 'false'
+    depends_on:
+      llmops-db:
+        condition: service_healthy
+      llmops-redis:
+        condition: service_healthy
+      llmops-weaviate:
+        condition: service_started
+
+  llmops-redis:
+    image: redis:6-alpine
+    restart: always
+    container_name: llmops-redis
+    volumes:
+      - ./volumes/redis/data:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      # 带密码认证探测（不加 -a 会因 NOAUTH 一直不健康）
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      # 生产环境不建议把数据库端口暴露到宿主机，如确需外部访问再打开
+      - "127.0.0.1:6379:6379"
+
+  llmops-db:
+    image: postgres:15-alpine
+    restart: always
+    container_name: llmops-db
+    environment:
+      # 配置默认的账户名、账户密码、默认数据库、数据存储的位置
+      PGUSER: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: llmops
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      # 将 postgres 数据挂载到本地 ./volumes/db/data 上
+      - ./volumes/db/data:/var/lib/postgresql/data/pgdata
+      # 初始化脚本只有在空数据挂载的情况下才会触发执行(.sql/.sh等)，如果已经存在数据则不会执行
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      # 每隔 1s 发起一个健康测试，最多重试 30 次
+      test: [ "CMD", "pg_isready" ]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    ports:
+      # 生产环境不建议把数据库端口暴露到宿主机，如确需外部访问再打开
+      - "127.0.0.1:5432:5432"
+
+  llmops-weaviate:
+    image: semitechnologies/weaviate:1.28.4
+    container_name: llmops-weaviate
+    restart: always
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25  # 查询默认返回的数据条数
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'  # 需要授权才能和 weaviate 进行交互
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate  # weaviate 数据存储路径
+      DEFAULT_VECTORIZER_MODULE: 'none'  # 向量化模块设置为 none
+      CLUSTER_HOSTNAME: 'node1'  # 节点的主机名字
+      AUTHENTICATION_APIKEY_ENABLED: 'true'  # 启动基于 API 秘钥的身份校验
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: "${WEAVIATE_API_KEY}"  # 允许的 API 秘钥列表
+      AUTHENTICATION_APIKEY_USERS: 'llmops@growth.com'  # 基于秘钥的 API 身份列表
+      AUTHORIZATION_ADMINLIST_ENABLED: 'true'  # 启动 AdminList 授权方案
+      AUTHORIZATION_ADMINLIST_USERS: 'llmops@growth.com'  # 使用 AdminList 方案时具有管理权限的用户
+    volumes:
+      - ./volumes/weaviate:/var/lib/weaviate
+    ports:
+      # 仅内网访问即可
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:50051:50051"
+
+  llmops-nginx:
+    image: nginx:latest
+    restart: always
+    container_name: llmops-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/proxy.conf:/etc/nginx/proxy.conf
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      # 启用 HTTPS 时再挂载证书目录（当前为 IP+HTTP 直服，不启用）
+      - ./nginx/ssl:/etc/ssl
+    depends_on:
+      - llmops-ui
+      - llmops-api
+    ports:
+      - "80:80"
+      # 启用 HTTPS 时再打开
+      # - "443:443"

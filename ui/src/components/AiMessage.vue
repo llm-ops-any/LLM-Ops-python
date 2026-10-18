@@ -27,7 +27,33 @@ const props = defineProps({
   message_class: { type: String, default: '!bg-gray-100', required: false },
 })
 const emits = defineEmits(['selectSuggestedQuestion'])
-const md = MarkdownIt()
+// linkify: 裸 URL 自动转链接；breaks: 单个换行也换行
+const md = MarkdownIt({ html: false, linkify: true, breaks: true })
+
+// 链接：新窗口打开；商品详情链接渲染为「立即购买」按钮
+const defaultLinkOpen = md.renderer.rules.link_open ?? ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options))
+md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  const token = tokens[idx]
+  const href = token.attrGet('href') || ''
+  if (/^https?:\/\//.test(href)) {
+    token.attrSet('target', '_blank')
+    token.attrSet('rel', 'noopener noreferrer')
+  }
+  if (/^https?:\/\/(detail\.tmall\.com|item\.taobao\.com|detail\.1688\.com|item\.jd\.com)\//.test(href)) {
+    token.attrJoin('class', 'buy-btn')
+  }
+  return defaultLinkOpen(tokens, idx, options, env, self)
+}
+
+// 图片：懒加载 + 不带 referrer（规避图床防盗链）
+md.renderer.rules.image = (tokens, idx, options, env, self) => {
+  const token = tokens[idx]
+  token.attrSet('alt', self.renderInlineAsText(token.children ?? [], options, env))
+  token.attrSet('loading', 'lazy')
+  token.attrSet('referrerpolicy', 'no-referrer')
+  return self.renderToken(tokens, idx, options)
+}
+
 const compiledMarkdown = computed(() => {
   return md.render(props.answer)
 })

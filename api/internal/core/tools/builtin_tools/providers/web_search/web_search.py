@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """网页搜索工具，优先使用360搜索、失败时回退必应，均无需API密钥且国内可直连"""
+# TODO(搜索接入): 当前为HTML抓取实现，改版即失效且拿不到来源/发布时间/真实URL。
+#  后续计划接入官方搜索API（火山豆包 / 阿里IQS / 百度千帆等），接口清单、选型判据、
+#  落地步骤与验收标准见 docs/搜索API接入待办.md（2026-10-18 留存，张勇决定暂缓实施）。
 import re
 from typing import Any, Type
 

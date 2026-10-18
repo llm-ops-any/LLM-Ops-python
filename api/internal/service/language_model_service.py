@@ -116,11 +116,17 @@ class LanguageModelService(BaseService):
             model_class = provider.get_model_class(model_entity.model_type)
 
             # 3.实例化模型后并返回
+            # 说明：把平台(provider)与模型名一并写入metadata，供智能体流式适配层按平台/模型
+            #      选择适配器；也可在模型配置metadata里设置stream_adapter强制指定适配器。
             return model_class(
                 **model_entity.attributes,
                 **parameters,
                 features=model_entity.features,
-                metadata=model_entity.metadata,
+                metadata={
+                    **model_entity.metadata,
+                    "provider": provider_name,
+                    "model": model_name,
+                },
             )
         except Exception as e:
             # 说明：兜底前必须把真实异常打出来。此处原先是一个静默的except，
@@ -147,5 +153,9 @@ class LanguageModelService(BaseService):
         return model_class(
             **model_entity.attributes,
             features=model_entity.features,
-            metadata=model_entity.metadata,
+            metadata={
+                **model_entity.metadata,
+                "provider": provider_name,
+                "model": model_name,
+            },
         )

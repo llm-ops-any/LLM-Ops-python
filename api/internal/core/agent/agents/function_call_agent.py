@@ -24,6 +24,7 @@ from internal.core.agent.entities.agent_entity import (
     DATASET_RETRIEVAL_TOOL_NAME,
     MAX_ITERATION_RESPONSE,
 )
+from internal.core.agent.adapters import StreamEvent, get_stream_adapter
 from internal.core.agent.entities.queue_entity import AgentThought, QueueEvent
 from internal.core.language_model.entities.model_entity import ModelFeature
 from internal.exception import FailException
@@ -168,43 +169,23 @@ class FunctionCallAgent(BaseAgent):
         ):
             llm = llm.bind_tools(self.agent_config.tools)
 
-        # 4.流式调用LLM输出对应内容
+        # 4.获取流式适配器：所有平台/模型统一走通用处理，差异由适配器内部消化
+        adapter = get_stream_adapter(self.llm)
+
+        # 5.流式调用LLM输出对应内容
         gathered = None
-        is_first_chunk = True
-        generation_type = ""
         try:
             for chunk in llm.stream(state["messages"]):
-                if is_first_chunk:
-                    gathered = chunk
-                    is_first_chunk = False
-                else:
-                    gathered += chunk
+                # 6.累加整段输出，用于流结束后判定本轮是工具调用还是最终答案
+                gathered = chunk if gathered is None else gathered + chunk
 
-                # 5.检测生成类型是工具参数还是文本生成
-                if not generation_type:
-                    if chunk.tool_calls:
-                        generation_type = "thought"
-                    elif chunk.content:
-                        generation_type = "message"
-
-                # 6.如果生成的是消息则提交智能体消息事件
-                if generation_type == "message":
-                    # 7.提取片段内容并检测是否开启输出审核
-                    review_config = self.agent_config.review_config
-                    content = chunk.content
-                    if review_config["enable"] and review_config["outputs_config"]["enable"]:
-                        for keyword in review_config["keywords"]:
-                            content = re.sub(re.escape(keyword), "**", content, flags=re.IGNORECASE)
-
-                    self.agent_queue_manager.publish(state["task_id"], AgentThought(
-                        id=id,
-                        task_id=state["task_id"],
-                        event=QueueEvent.AGENT_MESSAGE,
-                        thought=content,
-                        message=messages_to_dict(state["messages"]),
-                        answer=content,
-                        latency=(time.perf_counter() - start_at),
-                    ))
+                # 7.适配器归一化输出：文本(答案片段)、工具调用(推理)、推理内容(reasoning)
+                #   说明：不再用第一个chunk定性，遇到“先输出铺垫文本再返回tool_calls”的模型
+                #        也能正确切换为工具调用轮，标签由适配器按平台/模型差异化处理。
+                for signal in adapter.feed(chunk):
+                    if signal.event != StreamEvent.MESSAGE or not signal.content:
+                        continue
+                    self._publish_message(state, id, start_at, signal.content)
         except Exception as e:
             logging.exception(
                 "LLM节点发生错误, 错误信息: %(error)s",
@@ -237,13 +218,23 @@ class FunctionCallAgent(BaseAgent):
         total_token_count = input_token_count + output_token_count
         total_price = (input_token_count * input_price + output_token_count * output_price) * unit
 
-        # 12.如果类型为推理则添加智能体推理事件
-        if generation_type == "thought":
+        # 12.整段输出结束，由适配器统一判定本轮是工具调用还是最终答案
+        # 说明：判定只依赖整段输出，不依赖首个chunk，可兼容“先输出铺垫文本再返回tool_calls”
+        #      的模型(deepseek等)，也能识别文本形态的工具调用(通义)与尾包工具调用(ollama)。
+        signals, has_tool_calls = adapter.finish(gathered)
+        for signal in signals:
+            if signal.event == StreamEvent.MESSAGE and signal.content:
+                self._publish_message(state, id, start_at, signal.content)
+
+        # 13.如果类型为推理则添加智能体推理事件
+        if has_tool_calls:
+            # 回写清洗后的工具调用(名称去前缀、参数转字典)，保证工具节点能正确匹配
+            gathered = adapter.apply_tool_calls(gathered, adapter.tool_calls)
             self.agent_queue_manager.publish(state["task_id"], AgentThought(
                 id=id,
                 task_id=state["task_id"],
                 event=QueueEvent.AGENT_THOUGHT,
-                thought=json.dumps(gathered.tool_calls),
+                thought=json.dumps(adapter.tool_calls),
                 # 消息相关字段
                 message=messages_to_dict(state["messages"]),
                 message_token_count=input_token_count,
@@ -259,8 +250,8 @@ class FunctionCallAgent(BaseAgent):
                 total_price=total_price,
                 latency=(time.perf_counter() - start_at),
             ))
-        elif generation_type == "message":
-            # 13.如果LLM直接生成answer则表示已经拿到了最终答案，推送一条空内容用于计算总token+总成本，并停止监听
+        else:
+            # 14.整段输出没有工具调用，说明已经拿到最终答案，推送一条空内容用于计算总token+总成本，并停止监听
             self.agent_queue_manager.publish(state["task_id"], AgentThought(
                 id=id,
                 task_id=state["task_id"],
@@ -287,7 +278,24 @@ class FunctionCallAgent(BaseAgent):
                 event=QueueEvent.AGENT_END,
             ))
 
-        return {"messages": [gathered], "iteration_count": state["iteration_count"] + 1}
+        return {"messages": [gathered or AIMessage(content="")], "iteration_count": state["iteration_count"] + 1}
+
+    def _publish_message(self, state: AgentState, id: uuid.UUID, start_at: float, content: str) -> None:
+        """推送一条智能体消息事件，并执行输出审核(命中敏感词则替换为**)"""
+        review_config = self.agent_config.review_config
+        if review_config["enable"] and review_config["outputs_config"]["enable"]:
+            for keyword in review_config["keywords"]:
+                content = re.sub(re.escape(keyword), "**", content, flags=re.IGNORECASE)
+
+        self.agent_queue_manager.publish(state["task_id"], AgentThought(
+            id=id,
+            task_id=state["task_id"],
+            event=QueueEvent.AGENT_MESSAGE,
+            thought=content,
+            message=messages_to_dict(state["messages"]),
+            answer=content,
+            latency=(time.perf_counter() - start_at),
+        ))
 
     def _tools_node(self, state: AgentState) -> AgentState:
         """工具执行节点"""

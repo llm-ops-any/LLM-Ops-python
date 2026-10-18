@@ -36,7 +36,13 @@ class ToolNode(BaseNode):
         # 2.导入依赖注入及工具提供者
         from app.http.module import injector
 
-        # 3.判断是内置插件还是API插件，执行不同的操作
+        # 3.校验插件节点配置，避免未选择插件时以空字符串查询数据库（provider_id为空会触发UUID解析异常）
+        if not self.node_data.tool_type or not self.node_data.provider_id or not self.node_data.tool_id:
+            raise FailException(
+                f"扩展插件节点【{self.node_data.title}】未选择插件，请先选择内置插件/API插件，或删除该节点后重试"
+            )
+
+        # 4.判断是内置插件还是API插件，执行不同的操作
         if self.node_data.tool_type == "builtin_tool":
             from internal.core.tools.builtin_tools.providers import BuiltinProviderManager
             builtin_provider_manager = injector.get(BuiltinProviderManager)

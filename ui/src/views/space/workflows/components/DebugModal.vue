@@ -65,11 +65,24 @@ const onSubmit = async ({ errors }: { errors: Record<string, ValidatedError> | u
   // 6.2 检查表单是否出错，如果出错则直接结束
   if (errors) return
 
+  // 6.2.1 检查是否存在未配置插件的扩展插件节点，避免运行到该节点才报错
+  const invalidToolNode = nodes.value.find((item) => item.type === 'tool' && !item.data?.tool_id)
+  if (invalidToolNode) {
+    activatedTab.value = 'output'
+    debugWorkflowError.value = `节点【${invalidToolNode.data?.title || '扩展插件'}】未选择插件，请先选择内置插件/API插件，或删除该节点后重试`
+    return
+  }
+
   // 6.3 将tab选项切换到输出选项卡
   activatedTab.value = 'output'
 
   // 6.4 调用hooks发起请求
   await handleDebugWorkflow(props.workflow_id, form.value, (event_response) => {
+    // 错误事件：记录错误信息，不加入节点运行结果
+    if (event_response?.event === 'error') {
+      debugWorkflowError.value = event_response?.data?.message || '工作流运行失败'
+      return
+    }
     nodeResults.value.push(event_response?.data)
   })
 }

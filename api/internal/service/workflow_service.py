@@ -323,12 +323,16 @@ class WorkflowService(BaseService):
                 self.update(workflow, **{
                     "is_debug_passed": True,
                 })
-            except Exception:
+            except Exception as e:
                 self.update(workflow_result, **{
                     "status": WorkflowResultStatus.FAILED,
                     "state": node_results,
                     "latency": (time.perf_counter() - start_at)
                 })
+
+                # 说明：节点执行异常需要以error事件返回前端，否则调试面板只显示"运行失败"却没有失败原因
+                error_message = getattr(e, "message", None) or str(e) or "工作流运行失败，请稍后重试"
+                yield f"event: error\ndata: {json.dumps({'message': error_message})}\n\n"
 
         return handle_stream()
 

@@ -1,0 +1,4 @@
+name: web_search
+label: 网页搜索
+description: 网页搜索工具，免密钥且国内可直连（360搜索优先、必应兜底），输入为一个查询语句。
+params: [ ]

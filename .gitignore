@@ -22,3 +22,4 @@ ui/dist/
 # Docker容器相关
 docker/volumes/
 docker/.env
+.venv

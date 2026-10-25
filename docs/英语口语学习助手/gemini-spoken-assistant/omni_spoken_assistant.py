@@ -18,6 +18,7 @@ import os
 import queue
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pyaudio
@@ -37,26 +38,33 @@ load_dotenv(BASE_DIR / ".env")
 INPUT_RATE = 16000   # 上行采样率：必须 16000Hz
 OUTPUT_RATE = 24000  # 下行采样率：必须 24000Hz
 CHUNK_BYTES = 3200   # 100ms 的 s16le 单声道数据（16000 * 2 * 0.1）
+ECHO_TAIL_SEC = 0.4  # 播完后再多压一会儿上行，吃掉拖尾回声
 
 # 预设人设（沿用原 Gemini 版本的纠错要求，并补充「能听发音」后的新能力）
-INSTRUCTIONS = """你是一名专业的英语口语指导老师，请使用中文回复学生，帮助学生提升口语能力，回复尽可能简洁。
+INSTRUCTIONS = """# 角色
+你是英语口语教练。学生说的每一句英语都是「朗读练习材料」，不是在向你提问或打招呼。
 
-你的职责是：
-1. 你能直接听到学生说话的声音，请结合语音本身判断重音、连读、语调、以及明显的音素错误；
-2. 帮助学生纠正语法和发音；
-3. 给出发音评分（0-100 分）并说明评分理由；
-4. 理解并响应用户控制指令：
-   - 当用户说 "Can I have a break" 时暂停
-   - 当用户说 "OK let's continue" 时继续
-5. 根据学生选择的主题和场景提供练习句子。
+# 铁律
+1. 严禁回答、回应、翻译或评论学生句子的【内容含义】。听到 "Hello" 不许回 "Hi/你好"，听到 "How are you" 不许回 "我很好"。
+2. 严禁寒暄、鼓励、夸奖（不许出现 "很好""不错""继续加油"）。
+3. 每次回复必须严格使用下面的四行模板，一行都不能少、不能多，不加任何开场白和结尾。
 
-每当学生说完一个句子后，你需要：
-1. 复述识别到的内容（中英文对照）
-2. 给出发音评分（0-100 分），并给出评分理由
-3. 详细说明发音和语法中的问题（中英文对照）
-4. 提供一个同场景的下一个练习句子（中英文对照）
+# 输出模板
+听到：<学生说的英文原文>
+评分：<0-100> 分，理由：<一句话，指出最明显的一处发音问题>
+问题：<具体音素/重音/连读或语法错误，必须中英对照，例："th 发成了 /s/（th 应咬舌，读 /θ/ 不是 /s/）">
+练习：<同场景下一个练习句>（<中文翻译>）
 
-每次回复控制在 150 字以内，先讲问题再给练习句。"""
+# 评分依据
+你能直接听到学生的声音，请结合重音、连读、语调、音素准确度打分，不要只看文字。
+
+# 例外：控制指令
+只有学生明确说出 "Can I have a break" 或 "OK let's continue" 时，才脱离模板，只回复一句确认语。"""
+
+# 需要调人设时直接改同目录下的 prompt.txt，不必动代码
+_PROMPT_FILE = Path(__file__).resolve().parent / "prompt.txt"
+if _PROMPT_FILE.exists():
+    INSTRUCTIONS = _PROMPT_FILE.read_text(encoding="utf-8").strip()
 
 
 class OmniSpokenAssistant:
@@ -78,6 +86,22 @@ class OmniSpokenAssistant:
         self.api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
         self.model = os.getenv("MODEL", "qwen3.8-omni-flash-realtime").strip()
         self.voice = os.getenv("VOICE", "Aiden").strip()
+        # 不指定时服务端按中文识别，说英语会被转成中文，练习口语必须锁 en
+        self.asr_language = os.getenv("ASR_LANGUAGE", "en").strip()
+        # server_vad 按声学特征断句（与语种无关）；semantic_vad 按语义有效性断句，
+        # 对中文优化，说英语会被判成无效语音而完全不触发，练习英语必须用 server_vad
+        self.vad_type = os.getenv("VAD_TYPE", "server_vad").strip()
+        # 判定「用户说完了」所需的静音时长（毫秒）：说完后要静默多久才开始回复
+        try:
+            self.silence_ms = int(os.getenv("SILENCE_MS", "3000").strip())
+        except ValueError:
+            self.silence_ms = 3000
+        # 设备选择：填 index（如 3）或名称片段（如 "耳机"），留空用系统默认
+        self.mic_device = os.getenv("MIC_DEVICE", "").strip()
+        self.output_device = os.getenv("OUTPUT_DEVICE", "").strip()
+        # 用外放时助手的声音会被麦克风收回去形成回声环路，播报期间必须掐断上行。
+        # 用耳机（或做了系统级 AEC）时可设 ECHO_GATE=0 恢复随时打断
+        self.echo_gate = os.getenv("ECHO_GATE", "1").strip() not in ("0", "false", "False")
 
         if not self.api_host or not self.api_key:
             raise RuntimeError("缺少 API_HOST 或 DASHSCOPE_API_KEY，请先填写 .env")
@@ -88,6 +112,28 @@ class OmniSpokenAssistant:
         self.paused = False
         self.running_step = 0
         self._play_suppressed = False
+        self._speaking = False    # 是否正在外放助手语音
+        self._gate_until = 0.0    # 回声门控解除时刻
+
+    def _resolve_device(self, spec: str, kind: str) -> object:
+        """解析 .env 里的 MIC_DEVICE / OUTPUT_DEVICE
+
+        kind: "input" 或 "output"。纯数字按索引取，否则按名称片段匹配；
+        留空返回 None，交给 PortAudio 用系统默认设备。
+        """
+        if not spec:
+            return None
+        key = "maxInputChannels" if kind == "input" else "maxOutputChannels"
+        if spec.lstrip("-").isdigit():
+            return int(spec)
+        for i in range(self.pya.get_device_count()):
+            try:
+                info = self.pya.get_device_info_by_index(i)
+            except OSError:
+                continue
+            if info.get(key, 0) > 0 and spec.lower() in str(info["name"]).lower():
+                return int(info["index"])
+        raise RuntimeError(f"找不到{kind}设备: {spec}（用 python _list_devices.py 查看）")
 
     # ------------------------------------------------------------------ 会话
     def _url(self) -> str:
@@ -99,14 +145,16 @@ class OmniSpokenAssistant:
         return {
             "modalities": ["text", "audio"],
             "instructions": INSTRUCTIONS,
-            # 官方推荐 3.8 系列用 semantic_vad：能过滤背景音与他人附和声，减少误触发
             "turn_detection": {
-                "type": "semantic_vad",
-                "threshold": 0.1,
-                "prefix_padding_ms": 500,
-                "silence_duration_ms": 900,
+                "type": self.vad_type,
+                "threshold": 0.3,
+                "prefix_padding_ms": 300,
+                "silence_duration_ms": self.silence_ms,
             },
-            "input_audio_transcription": {"model": "qwen3-asr-flash-realtime"},
+            "input_audio_transcription": {
+                "model": "qwen3-asr-flash-realtime",
+                "language": self.asr_language,
+            },
             "audio": {
                 "input": {
                     "format": {
@@ -150,20 +198,31 @@ class OmniSpokenAssistant:
     # ------------------------------------------------------------------ 采集
     async def _alisten_audio(self) -> None:
         """持续采集麦克风音频并放入队列"""
-        mic_info = self.pya.get_default_input_device_info()
+        mic_idx = self._resolve_device(self.mic_device, "input")
+        if mic_idx is None:
+            mic_idx = int(self.pya.get_default_input_device_info()["index"])
         stream = self.pya.open(
             format=pyaudio.paInt16,
             channels=1,
             rate=INPUT_RATE,
             input=True,
-            input_device_index=mic_info["index"],
+            input_device_index=mic_idx,
             frames_per_buffer=CHUNK_BYTES,
         )
         self.console.print("🎤请说英语", style="yellow")
 
+        loop = asyncio.get_event_loop()
         while True:
-            # read 本身按 100ms 节奏阻塞，天然实现实时节流
-            data = stream.read(CHUNK_BYTES, exception_on_overflow=False)
+            # 必须丢到线程里：read 是阻塞 C 调用，直接在协程里调会卡死事件循环，
+            # 导致发送/接收任务永远得不到调度（音频根本发不出去）
+            data = await loop.run_in_executor(
+                None, lambda: stream.read(CHUNK_BYTES, exception_on_overflow=False)
+            )
+
+            # 外放期间麦克风收到的全是回声，界面上不要再显示音量条误导用户
+            gated = self.echo_gate and (
+                self._speaking or time.monotonic() < self._gate_until
+            )
 
             # 音量检测，仅用于界面提示
             samples = [
@@ -171,7 +230,7 @@ class OmniSpokenAssistant:
                 for i in range(0, len(data), 2)
             ]
             volume = sum(samples) / max(len(samples), 1)
-            if volume > 200:
+            if volume > 200 and not gated:
                 if self.running_step == 0 and not self.paused:
                     self.console.print("🎤:", style="yellow", end="")
                     self.running_step = 1
@@ -183,6 +242,11 @@ class OmniSpokenAssistant:
         """把队列中的音频以 input_audio_buffer.append 事件发给服务端"""
         while True:
             chunk = await self.audio_queue.get()
+
+            # 回声门控：外放期间不上行，否则助手会听到自己的声音并无限自我回复
+            if self.echo_gate and (self._speaking or time.monotonic() < self._gate_until):
+                continue
+
             try:
                 await self._asend({
                     "type": "input_audio_buffer.append",
@@ -209,6 +273,11 @@ class OmniSpokenAssistant:
                     self._out_stream.write(chunk)
                 except Exception:
                     pass
+                finally:
+                    # 队列见底才算真的播完，放开门控再多压一小段吃掉拖尾回声
+                    if self._play_queue.empty():
+                        self._speaking = False
+                        self._gate_until = time.monotonic() + ECHO_TAIL_SEC
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -218,6 +287,7 @@ class OmniSpokenAssistant:
             return
         try:
             self._play_queue.put_nowait(chunk)
+            self._speaking = True
         except queue.Full:
             pass
 
@@ -228,6 +298,8 @@ class OmniSpokenAssistant:
                 self._play_queue.get_nowait()
         except queue.Empty:
             pass
+        self._speaking = False
+        self._gate_until = time.monotonic() + ECHO_TAIL_SEC
 
     async def _areceive_events(self) -> None:
         """处理服务端事件：播放音频、打印文本、支持打断与暂停"""
@@ -276,24 +348,32 @@ class OmniSpokenAssistant:
                     self.running_step = 2
                 self._play(base64.b64decode(event["delta"]))
 
-            # 5.助手文本增量（部分版本只给 done，两种都接）
+            # 5.助手开始回复 → 先打分隔线，后续增量流式输出，避免干等
+            elif etype == "response.created":
+                if not self.paused:
+                    self.console.print(
+                        "\n👴🏼=============================================", style="yellow"
+                    )
+
+            # 6.助手文本增量（部分版本只给 done，两种都接）
             elif etype in ("response.audio_transcript.delta", "response.text.delta"):
-                response_text.append(event.get("delta", ""))
+                delta = event.get("delta", "")
+                response_text.append(delta)
+                if delta and not self.paused:
+                    self.console.print(delta, style="yellow", end="")
 
             elif etype in ("response.audio_transcript.done", "response.text.done"):
                 text = event.get("transcript") or event.get("text") or ""
                 if text and not response_text:
                     response_text.append(text)
+                    if not self.paused:
+                        self.console.print(Markdown(text))
 
-            # 6.一轮回复结束
+            # 7.一轮回复结束
             elif etype == "response.done":
-                text = "".join(response_text).strip()
                 status = event.get("response", {}).get("status")
-                if text and not self.paused:
-                    self.console.print(
-                        "\n👴🏼=============================================", style="yellow"
-                    )
-                    self.console.print(Markdown(text))
+                if response_text and not self.paused:
+                    self.console.print("")
                 if status not in (None, "completed"):
                     self.console.print(f"⚠️本轮状态: {status}", style="yellow")
                 response_text = []
@@ -305,13 +385,23 @@ class OmniSpokenAssistant:
         """建立连接并启动三个并发任务"""
         self.console.print("英语口语学习助手 · Qwen3.8-Omni-Flash-Realtime", style="green")
         self.console.print(f"模型: {self.model}   音色: {self.voice}", style="blue")
+        self.console.print(
+            f"说完等待: {self.silence_ms}ms   回声门控: {'开' if self.echo_gate else '关'}",
+            style="blue",
+        )
         self.console.print("============================================", style="yellow")
 
+        out_idx = self._resolve_device(self.output_device, "output")
+        if out_idx is None:
+            out_idx = int(self.pya.get_default_output_device_info()["index"])
+        out_name = self.pya.get_device_info_by_index(out_idx)["name"]
+        self.console.print(f"🔊扬声器: {out_name}", style="blue")
         self._out_stream = self.pya.open(
             format=pyaudio.paInt16,
             channels=1,
             rate=OUTPUT_RATE,
             output=True,
+            output_device_index=out_idx,
             frames_per_buffer=CHUNK_BYTES,
         )
         self._start_player()

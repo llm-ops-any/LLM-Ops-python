@@ -1,4 +1,9 @@
-elevenlabs
-rich
+# Omni-Realtime 版（omni_spoken_assistant.py）：模型直接音频进音频出，无需外挂 TTS
+websockets
 pyaudio
-google-genai
+rich
+python-dotenv
+
+# 旧 Gemini Live 版（gemini_spoken_assistant.py）如仍需运行，再单独安装：
+# elevenlabs
+# google-genai

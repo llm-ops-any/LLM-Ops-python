@@ -966,3 +966,29 @@
 .markdown-body .react-syntax-highlighter-line-number {
   color: #d0d5dd;
 }
+
+/* 商品详情链接渲染成「立即购买」按钮 */
+.markdown-body a.buy-btn {
+  display: inline-block;
+  padding: 2px 12px;
+  margin: 2px 0;
+  border-radius: 999px;
+  background-color: #155eef;
+  color: #ffffff !important;
+  font-size: 12px;
+  line-height: 20px;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.markdown-body a.buy-btn:hover {
+  background-color: #0e4bd0;
+  text-decoration: none;
+}
+
+/* 消息里的商品图片，避免大图撑破气泡 */
+.markdown-body img {
+  max-width: 240px;
+  height: auto;
+  border-radius: 8px;
+}

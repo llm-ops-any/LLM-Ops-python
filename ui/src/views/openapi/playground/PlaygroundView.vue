@@ -304,9 +304,9 @@ const handleClearSession = () => {
 
     <!-- 主体：左表单 / 右响应 -->
     <div
-      class="grid flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-[minmax(340px,420px)_1fr]"
+      class="grid flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-4 overflow-hidden lg:grid-cols-[minmax(340px,420px)_1fr]"
     >
-      <a-card class="overflow-auto" :bordered="false">
+      <a-card class="!h-full !min-h-0 overflow-auto" :bordered="false">
         <RequestForm
           v-if="endpoint"
           :endpoint="endpoint"
@@ -323,7 +323,7 @@ const handleClearSession = () => {
         />
       </a-card>
 
-      <a-card class="overflow-hidden" :bordered="false">
+      <a-card class="panel-card" :bordered="false">
         <ResponsePanel
           :answer="answer"
           :thoughts="thoughts"
@@ -339,4 +339,19 @@ const handleClearSession = () => {
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+/* 右侧卡片：把高度链打通，让内部面板能真正滚动，而不是被卡片裁掉 */
+.panel-card {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-card :deep(.arco-card-body) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+</style>

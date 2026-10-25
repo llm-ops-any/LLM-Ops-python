@@ -40,3 +40,10 @@
   background: "#FFFFFF"
   category: other
   created_at: 1722498386
+- name: web_search
+  label: 网页搜索
+  description: 网页搜索工具，无需API密钥，国内网络可直连（360搜索优先、必应兜底）。
+  icon: icon.svg
+  background: "#E5F1FB"
+  category: search
+  created_at: 1792300000

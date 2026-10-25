@@ -49,28 +49,28 @@ const handleCopyCurl = () => copyText(props.curlFull, '已复制（含完整 API
 
 <template>
   <div class="flex h-full flex-col overflow-hidden">
-    <a-tabs v-model:active-key="activeTab" type="text" class="flex-1 overflow-hidden">
+    <a-tabs v-model:active-key="activeTab" type="text" class="playground-tabs">
       <!-- 一、回答 -->
       <a-tab-pane key="answer" title="回答">
-        <div class="flex h-full flex-col gap-3 overflow-auto pr-1">
+        <div class="flex h-full min-h-0 flex-col gap-3 overflow-auto pr-1">
           <!-- 错误原文：一律原样展示，不能只弹 toast -->
           <div
             v-if="error"
-            class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            class="shrink-0 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
           >
             <div class="mb-1 font-medium">请求失败（以下为服务端返回原文）</div>
             <div class="whitespace-pre-wrap break-all font-mono text-xs">{{ error }}</div>
           </div>
 
           <!-- 回答内容 -->
-          <div class="min-h-[80px] whitespace-pre-wrap break-words text-sm text-gray-800">
+          <div class="min-h-[80px] shrink-0 whitespace-pre-wrap break-words text-sm text-gray-800">
             <span v-if="answer">{{ answer }}</span>
             <span v-else-if="loading" class="text-gray-400">正在等待模型输出…</span>
             <span v-else class="text-gray-400">尚未发起请求</span>
           </div>
 
           <!-- 推理链路 -->
-          <div v-if="thoughts.length > 0" class="flex flex-col gap-2">
+          <div v-if="thoughts.length > 0" class="flex shrink-0 flex-col gap-2">
             <a-button
               type="text"
               size="mini"
@@ -164,4 +164,44 @@ const handleCopyCurl = () => copyText(props.curlFull, '已复制（含完整 API
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+/*
+ * Arco Tabs 默认给内容区的是「高度随内容」：.arco-tabs-content{padding-top:16px;overflow:hidden}
+ * .arco-tabs-content-item{height:0;overflow:hidden} / -active{height:auto}
+ * 结果：面板里的 h-full / overflow-auto 拿不到确定高度，内容超出后被裁掉且无法滚动。
+ * 这里把 tabs 改成纵向 flex，并把内容区高度改成确定值，滚动交回面板自己。
+ */
+.playground-tabs {
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.playground-tabs :deep(.arco-tabs-content) {
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.playground-tabs :deep(.arco-tabs-content-list) {
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
+.playground-tabs :deep(.arco-tabs-content-item.arco-tabs-content-item-active) {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* pane 是插槽的真正容器，它不给定高度时里面的 h-full 依然是 auto */
+.playground-tabs :deep(.arco-tabs-pane) {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+</style>

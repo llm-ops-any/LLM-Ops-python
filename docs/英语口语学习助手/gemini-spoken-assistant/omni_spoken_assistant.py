@@ -135,6 +135,80 @@ class OmniSpokenAssistant:
                 return int(info["index"])
         raise RuntimeError(f"找不到{kind}设备: {spec}（用 python _list_devices.py 查看）")
 
+    @staticmethod
+    def _iter_devices(pya: pyaudio.PyAudio, kind: str):
+        """按索引遍历设备（PyAudio 没有设备生成器）"""
+        key = "maxInputChannels" if kind == "input" else "maxOutputChannels"
+        for i in range(pya.get_device_count()):
+            try:
+                info = pya.get_device_info_by_index(i)
+            except OSError:
+                continue
+            if info.get(key, 0) > 0:
+                yield int(info["index"]), str(info["name"])
+
+    def _can_open_output(self, idx: int) -> bool:
+        """用真实参数（24kHz/16bit/单声道）试着打开，打不开的一律排除"""
+        try:
+            stream = self.pya.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=OUTPUT_RATE,
+                output=True,
+                output_device_index=idx,
+            )
+        except Exception:
+            return False
+        stream.close()
+        return True
+
+    def _auto_output_device(self) -> tuple:
+        """自动选扬声器：先按真实参数试开过滤，再按名称打分排序
+
+        打分规则（设备名中文部分是乱码，只能靠 ASCII 关键词）：
+          +50 命中 speaker/headphone/headset/edifier/realtek/usb/analog（真音箱耳机）
+          -40 命中 nvidia/hdmi/hands-free/virtual（显卡 HDMI 口、蓝牙免提、虚拟设备）
+          +10 命中 mapper（声音映射器，会跟随 Windows 默认设备，比较稳）
+          +20 是系统默认输出设备
+        """
+        default_idx = int(self.pya.get_default_output_device_info()["index"])
+        positive = ("speaker", "headphone", "headset", "edifier", "realtek", "usb", "analog")
+        negative = ("nvidia", "hdmi", "hands-free", "virtual")
+        neutral = ("mapper",)
+
+        scored = []
+        for idx, name in self._iter_devices(self.pya, "output"):
+            if not self._can_open_output(idx):
+                continue
+            low = name.lower()
+            score = 0
+            if any(k in low for k in positive):
+                score += 50
+            if any(k in low for k in negative):
+                score -= 40
+            if any(k in low for k in neutral):
+                score += 10
+            if idx == default_idx:
+                score += 20
+            scored.append((score, idx, name))
+
+        if not scored:  # 全都打不开，退回系统默认
+            return default_idx, self.pya.get_device_info_by_index(default_idx)["name"], False
+
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        _, best_idx, best_name = scored[0]
+        return best_idx, best_name, True
+
+    def _resolve_output(self) -> tuple:
+        """决定用哪个输出设备：.env 显式指定优先，auto/留空则自动探测"""
+        spec = self.output_device.lower()
+        if spec and spec != "auto":
+            idx = self._resolve_device(self.output_device, "output")
+            if idx is None:
+                idx = int(self.pya.get_default_output_device_info()["index"])
+            return int(idx), self.pya.get_device_info_by_index(idx)["name"], False
+        return self._auto_output_device()
+
     # ------------------------------------------------------------------ 会话
     def _url(self) -> str:
         """拼装业务空间专属的 WebSocket 地址"""
@@ -391,11 +465,11 @@ class OmniSpokenAssistant:
         )
         self.console.print("============================================", style="yellow")
 
-        out_idx = self._resolve_device(self.output_device, "output")
-        if out_idx is None:
-            out_idx = int(self.pya.get_default_output_device_info()["index"])
-        out_name = self.pya.get_device_info_by_index(out_idx)["name"]
-        self.console.print(f"🔊扬声器: {out_name}", style="blue")
+        out_idx, out_name, auto = self._resolve_output()
+        tag = "自动选择" if auto else "指定"
+        self.console.print(
+            f"🔊扬声器[{tag}]: index={out_idx}  {out_name}", style="blue"
+        )
         self._out_stream = self.pya.open(
             format=pyaudio.paInt16,
             channels=1,

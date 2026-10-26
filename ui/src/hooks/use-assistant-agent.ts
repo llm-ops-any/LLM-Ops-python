@@ -6,6 +6,7 @@ import {
   stopAssistantAgentChat,
 } from '@/services/assistant-agent'
 import type { GetAssistantAgentMessagesWithPageResponse } from '@/models/assistant-agent'
+import type { ChatAttachment } from '@/models/upload-file'
 import { Message } from '@arco-design/web-vue'
 
 export const useAssistantAgentChat = () => {
@@ -15,11 +16,12 @@ export const useAssistantAgentChat = () => {
   // 2.定义辅助Agent会话处理器
   const handleAssistantAgentChat = async (
     query: string,
+    files: ChatAttachment[],
     onData: (event_response: Record<string, any>) => void,
   ) => {
     try {
       loading.value = true
-      await assistantAgentChat(query, onData)
+      await assistantAgentChat(query, files, onData)
     } finally {
       loading.value = false
     }

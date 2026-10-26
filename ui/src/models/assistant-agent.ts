@@ -1,4 +1,5 @@
 import type { BasePaginatorRequest, BasePaginatorResponse } from '@/models/base'
+import type { ChatAttachment } from '@/models/upload-file'
 
 // 获取辅助Agent会话消息分页列表请求结构
 export type GetAssistantAgentMessagesWithPageRequest = BasePaginatorRequest & {
@@ -24,5 +25,7 @@ export type GetAssistantAgentMessagesWithPageResponse = BasePaginatorResponse<{
     latency: number
     created_at: number
   }[]
+  // 随本条消息上传的附件(服务端已持久化，历史与新消息都会回传)
+  attachments?: ChatAttachment[]
   created_at: number
 }>

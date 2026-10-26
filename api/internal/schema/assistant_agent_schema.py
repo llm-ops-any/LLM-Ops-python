@@ -10,16 +10,19 @@ from marshmallow import Schema, fields, pre_dump
 from wtforms import StringField, IntegerField
 from wtforms.validators import DataRequired, Optional, NumberRange
 
-from internal.lib.helper import datetime_to_timestamp
+from internal.lib.helper import datetime_to_timestamp, dump_attachment_metadata
 from internal.model import Message
 from pkg.paginator import PaginatorReq
+from .chat_attachment_schema import ChatAttachmentsMixin
+from .schema import ListField
 
 
-class AssistantAgentChat(FlaskForm):
+class AssistantAgentChat(ChatAttachmentsMixin, FlaskForm):
     """辅助Agent会话请求结构体"""
     query = StringField("query", validators=[
         DataRequired("用户提问query不能为空")
     ])
+    files = ListField("files", default=[])
 
 
 class GetAssistantAgentMessagesWithPageReq(PaginatorReq):
@@ -39,6 +42,7 @@ class GetAssistantAgentMessagesWithPageResp(Schema):
     total_token_count = fields.Integer(dump_default=0)
     latency = fields.Float(dump_default=0)
     agent_thoughts = fields.List(fields.Dict, dump_default=[])
+    attachments = fields.List(fields.Dict, dump_default=[])
     created_at = fields.Integer(dump_default=0)
 
     @pre_dump
@@ -48,6 +52,7 @@ class GetAssistantAgentMessagesWithPageResp(Schema):
             "conversation_id": data.conversation_id,
             "query": data.query,
             "answer": data.answer,
+            "attachments": dump_attachment_metadata(data.attachments),
             "total_token_count": data.total_token_count,
             "latency": data.latency,
             "agent_thoughts": [{

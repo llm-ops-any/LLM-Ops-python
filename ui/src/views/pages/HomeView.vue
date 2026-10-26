@@ -16,9 +16,11 @@ import { Message } from '@arco-design/web-vue'
 import { QueueEvent } from '@/config'
 import HumanMessage from '@/components/HumanMessage.vue'
 import AiMessage from '@/components/AiMessage.vue'
+import ChatInputBar from '@/components/ChatInputBar.vue'
+import type { ChatAttachment } from '@/models/upload-file'
 
 // 1.定义页面所需数据
-const query = ref('')
+const chatInputRef = ref<InstanceType<typeof ChatInputBar> | null>(null)
 const task_id = ref('')
 const message_id = ref('')
 const scroller = ref<any>(null)
@@ -62,9 +64,15 @@ const handleScroll = async (event: UIEvent) => {
 }
 
 // 5.定义输入框提交函数
-const handleSubmit = async () => {
+const handleSubmit = async ({
+  query: humanQuery,
+  attachments,
+}: {
+  query: string
+  attachments: ChatAttachment[]
+}) => {
   // 5.1 检测是否录入了query，如果没有则结束
-  if (query.value.trim() === '') {
+  if (humanQuery.trim() === '') {
     Message.warning('用户提问不能为空')
     return
   }
@@ -80,25 +88,24 @@ const handleSubmit = async () => {
   message_id.value = ''
   task_id.value = ''
 
-  // 5.4 往消息列表中添加基础人类消息
+  // 5.4 往消息列表中添加基础人类消息(附带本次上传的附件标签)
   messages.value.unshift({
     id: '',
     conversation_id: '',
-    query: query.value,
+    query: humanQuery,
     answer: '',
     total_token_count: 0,
     latency: 0,
     agent_thoughts: [],
+    attachments,
     created_at: 0,
   })
 
-  // 5.5 初始化推理过程数据，并清空输入数据
+  // 5.5 初始化推理过程数据
   let position = 0
-  const humanQuery = query.value
-  query.value = ''
 
   // 5.6 调用hooks发起请求
-  await handleAssistantAgentChat(humanQuery, (event_response) => {
+  await handleAssistantAgentChat(humanQuery, attachments, (event_response) => {
     // 5.7 提取流式事件响应数据以及事件名称
     const event = event_response?.event
     const data = event_response?.data
@@ -194,11 +201,8 @@ const handleStop = async () => {
 
 // 7.定义问题提交函数
 const handleSubmitQuestion = async (question: string) => {
-  // 1.将问题同步到query中
-  query.value = question
-
-  // 2.触发handleSubmit函数
-  await handleSubmit()
+  // 1.将问题填入输入框并直接触发提交
+  chatInputRef.value?.submit(question)
 }
 
 // 8.页面DOM加载完毕时初始化数据
@@ -235,7 +239,11 @@ onMounted(async () => {
           <template v-slot="{ item, active }">
             <dynamic-scroller-item :item="item" :active="active" :data-index="item.id">
               <div class="flex flex-col gap-6 py-6">
-                <human-message :query="item.query" :account="accountStore.account" />
+                <human-message
+                  :query="item.query"
+                  :attachments="item.attachments ?? []"
+                  :account="accountStore.account"
+                />
                 <ai-message
                   :agent_thoughts="item.agent_thoughts"
                   :answer="item.answer"
@@ -360,29 +368,14 @@ onMounted(async () => {
               <icon-empty :size="16" />
             </template>
           </a-button>
-          <!-- 输入框组件 -->
-          <div
-            class="bg-white h-[50px] flex items-center gap-2 px-4 flex-1 border border-gray-200 rounded-full"
-          >
-            <input
-              v-model="query"
-              type="text"
-              class="flex-1 outline-0"
-              placeholder="发送消息或创建AI应用..."
-              @keyup.enter="handleSubmit"
-            />
-            <a-button
-              :loading="assistantAgentChatLoading"
-              type="text"
-              shape="circle"
-              class="!text-gray-700"
-              @click="handleSubmit"
-            >
-              <template #icon>
-                <icon-send :size="16" />
-              </template>
-            </a-button>
-          </div>
+          <!-- 输入框组件(支持附件上传与语音输入) -->
+          <chat-input-bar
+            ref="chatInputRef"
+            class="flex-1"
+            :loading="assistantAgentChatLoading"
+            placeholder="发送消息或创建AI应用..."
+            @submit="handleSubmit"
+          />
         </div>
         <!-- 底部提示信息 -->
         <div class="text-center text-gray-500 text-xs py-4">

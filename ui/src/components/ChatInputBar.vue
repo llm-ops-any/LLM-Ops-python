@@ -44,7 +44,7 @@ const autoResize = () => {
     const textarea = textareaRef.value
     if (!textarea) return
     textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
   })
 }
 
@@ -328,10 +328,12 @@ defineExpose({ submit, fill, clear })
         />
       </div>
     </div>
-    <!-- 输入框区域 -->
+    <!-- 输入框区域(聚焦时由容器呈现蓝色高亮，避免浏览器默认的黑色outline) -->
     <div
-      :class="`flex items-end gap-2 px-2 py-1.5 border rounded-3xl bg-white transition-colors ${
-        recording ? 'border-red-300 bg-red-50/30' : 'border-gray-200'
+      :class="`flex items-end gap-1.5 px-2.5 py-1.5 border rounded-3xl bg-white transition-all focus-within:ring-4 ${
+        recording
+          ? 'border-red-300 bg-red-50/30 ring-red-100'
+          : 'border-gray-200 hover:border-gray-300 focus-within:border-blue-400 focus-within:ring-blue-100'
       }`"
     >
       <!-- 文本输入框 -->
@@ -340,7 +342,7 @@ defineExpose({ submit, fill, clear })
         v-model="query"
         rows="1"
         :placeholder="recording ? '正在聆听，请说话...' : props.placeholder"
-        class="flex-1 min-h-[36px] max-h-[120px] py-2 leading-6 resize-none outline-0 bg-transparent text-gray-700 placeholder:text-gray-400"
+        class="flex-1 min-h-[44px] max-h-[160px] py-2.5 text-[15px] leading-6 resize-none bg-transparent text-gray-700 placeholder:text-gray-400 outline-none focus:outline-none focus-visible:outline-none"
         @input="autoResize"
         @keydown="handleKeydown"
       />
@@ -356,8 +358,8 @@ defineExpose({ submit, fill, clear })
           <template #icon>
             <svg
               viewBox="0 0 24 24"
-              width="17"
-              height="17"
+              width="18"
+              height="18"
               fill="none"
               stroke="currentColor"
               stroke-width="2"
@@ -384,8 +386,8 @@ defineExpose({ submit, fill, clear })
           <template #icon>
             <svg
               viewBox="0 0 24 24"
-              width="16"
-              height="16"
+              width="18"
+              height="18"
               fill="none"
               stroke="currentColor"
               stroke-width="2"
@@ -417,7 +419,7 @@ defineExpose({ submit, fill, clear })
         @click="submit()"
       >
         <template #icon>
-          <icon-send :size="16" />
+          <icon-send :size="18" />
         </template>
       </a-button>
     </div>

@@ -26,6 +26,7 @@ from internal.core.language_model.entities.model_entity import ModelFeature
 from internal.core.language_model.providers.openai.chat import Chat
 from internal.core.memory import TokenBufferMemory
 from internal.entity.conversation_entity import InvokeFrom, MessageStatus
+from internal.lib.helper import build_query_with_attachments, build_attachment_metadata
 from internal.model import Account, Message
 from internal.schema.assistant_agent_schema import GetAssistantAgentMessagesWithPageReq
 from internal.task.app_task import auto_create_app
@@ -44,8 +45,11 @@ class AssistantAgentService(BaseService):
     faiss_service: FaissService
     conversation_service: ConversationService
 
-    def chat(self, query, account: Account) -> Generator:
-        """传递query与账号实现与辅助Agent进行会话"""
+    def chat(self, query, account: Account, attachments: list[dict] | None = None) -> Generator:
+        """传递query与账号实现与辅助Agent进行会话
+
+        :param attachments: 随消息上传的附件列表，格式为[{name, text, url}]，只参与本次模型调用
+        """
         # 1.获取辅助Agent对应的id
         assistant_agent_id = current_app.config.get("ASSISTANT_AGENT_ID")
 
@@ -60,6 +64,7 @@ class AssistantAgentService(BaseService):
             invoke_from=InvokeFrom.DEBUGGER,
             created_by=account.id,
             query=query,
+            attachments=build_attachment_metadata(attachments),
             status=MessageStatus.NORMAL,
         )
 
@@ -103,7 +108,7 @@ class AssistantAgentService(BaseService):
 
         agent_thoughts = {}
         for agent_thought in agent.stream({
-            "messages": [HumanMessage(query)],
+            "messages": [HumanMessage(build_query_with_attachments(query, attachments))],
             "history": history,
             "long_term_memory": conversation.summary,
         }):

@@ -4,13 +4,15 @@ import type {
   GetAssistantAgentMessagesWithPageRequest,
   GetAssistantAgentMessagesWithPageResponse,
 } from '@/models/assistant-agent'
+import type { ChatAttachment } from '@/models/upload-file'
 
-// 与辅助Agent进行对话
+// 与辅助Agent进行对话(支持随消息携带附件)
 export const assistantAgentChat = (
   query: string,
+  files: ChatAttachment[],
   onData: (event_response: Record<string, any>) => void,
 ) => {
-  return ssePost(`/assistant-agent/chat`, { body: { query } }, onData)
+  return ssePost(`/assistant-agent/chat`, { body: { query, files } }, onData)
 }
 
 // 停止与辅助Agent进行对话

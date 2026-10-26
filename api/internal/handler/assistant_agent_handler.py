@@ -36,8 +36,8 @@ class AssistantAgentHandler:
         if not req.validate():
             return validate_error_json(req.errors)
 
-        # 2.调用服务创建会话响应
-        response = self.assistant_agent_service.chat(req.query.data, current_user)
+        # 2.调用服务创建会话响应(携带附件文本，由服务层拼接到提问上下文中)
+        response = self.assistant_agent_service.chat(req.query.data, current_user, req.files.data)
 
         return compact_generate_response(response)
 

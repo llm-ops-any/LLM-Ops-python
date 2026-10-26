@@ -23,3 +23,6 @@ ui/dist/
 docker/volumes/
 docker/.env
 .venv
+开发文档/_汇总/
+__pycache__/
+*.pyc

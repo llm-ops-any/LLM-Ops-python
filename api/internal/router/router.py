@@ -31,6 +31,7 @@ from internal.handler import (
     AnalysisHandler,
     WebAppHandler,
     ConversationHandler,
+    ModelProviderHandler,
 )
 
 
@@ -58,6 +59,7 @@ class Router:
     analysis_handler: AnalysisHandler
     web_app_handler: WebAppHandler
     conversation_handler: ConversationHandler
+    model_provider_handler: ModelProviderHandler
 
     def register_router(self, app: Flask):
         """注册路由"""
@@ -469,6 +471,19 @@ class Router:
             view_func=self.conversation_handler.update_conversation_is_pinned,
         )
 
-        # 17.在应用上注册蓝图
+        # 17.大模型设置模块
+        bp.add_url_rule("/model-provider", view_func=self.model_provider_handler.get_model_provider)
+        bp.add_url_rule(
+            "/model-provider",
+            methods=["POST"],
+            view_func=self.model_provider_handler.update_model_provider,
+        )
+        bp.add_url_rule(
+            "/model-provider/test-connection",
+            methods=["POST"],
+            view_func=self.model_provider_handler.test_model_provider_connection,
+        )
+
+        # 18.在应用上注册蓝图
         app.register_blueprint(bp)
         app.register_blueprint(openapi_bp)

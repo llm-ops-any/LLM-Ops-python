@@ -1,0 +1,34 @@
+model: deepseek-flash
+label: deepseek-flash
+model_type: chat
+features:
+  - tool_call
+context_window: 131072  # 推定值：平台未提供该模型的上下文规格
+max_output_tokens: 8192  # 推定值：平台未提供该模型的输出上限
+attributes:
+  model: deepseek-flash
+  # 关闭思考模式：该平台deepseek系列默认开启思考模式并要求把reasoning_content原样回传，
+  # 而LangChain流式响应不保留该字段(实测恒为空)，工具调用第二轮会报400，故显式关闭。
+  extra_body:
+    thinking:
+      type: disabled
+parameters:
+  - name: temperature
+    use_template: temperature
+  - name: top_p
+    use_template: top_p
+    default: 0.85
+  - name: presence_penalty
+    use_template: presence_penalty
+  - name: frequency_penalty
+    use_template: frequency_penalty
+  - name: max_tokens
+    use_template: max_tokens
+    default: 4096
+metadata:
+  # 价格：平台未提供各模型的计费单价，暂填0，待有权威价格后补齐
+  pricing:
+    input: 0
+    output: 0
+    unit: 0.001
+    currency: RMB

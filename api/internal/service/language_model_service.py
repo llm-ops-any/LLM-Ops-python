@@ -21,6 +21,10 @@ from internal.lib.helper import convert_model_to_dict
 from pkg.sqlalchemy import SQLAlchemy
 from .base_service import BaseService
 
+# 平台默认的供应商与模型，模型配置缺失或失效时统一回退到它们
+DEFAULT_PROVIDER_NAME = os.environ.get("DEFAULT_LLM_PROVIDER") or "uino"
+DEFAULT_MODEL_NAME = os.environ.get("DEFAULT_LLM_MODEL") or "deepseek-v4-flash"
+
 
 @inject
 @dataclass
@@ -106,8 +110,9 @@ class LanguageModelService(BaseService):
         """根据传递的模型配置加载大语言模型，并返回其实例"""
         try:
             # 1.从model_config中提取出provider、model、parameters
-            provider_name = model_config.get("provider", "")
-            model_name = model_config.get("model", "")
+            # 说明：provider/model缺失时直接使用平台默认值，避免空配置走异常回调刷错误日志
+            provider_name = model_config.get("provider") or DEFAULT_PROVIDER_NAME
+            model_name = model_config.get("model") or DEFAULT_MODEL_NAME
             parameters = model_config.get("parameters", {})
 
             # 2.从模型管理器获取提供者、模型实体、模型类
@@ -144,8 +149,8 @@ class LanguageModelService(BaseService):
         # (由OPENAI_API_BASE注入)，该模型名在平台上并不存在，用它兜底只会把"配置错误"替换成
         # "model_not_found"，等于既没兜住底又多绕一层。故改为从模型管理器读取平台上真实存在的
         # 模型作为兜底，并允许通过环境变量覆盖(平台模型清单随时可能变动)。
-        provider_name = os.environ.get("DEFAULT_LLM_PROVIDER") or "uino"
-        model_name = os.environ.get("DEFAULT_LLM_MODEL") or "deepseek-v4-flash"
+        provider_name = DEFAULT_PROVIDER_NAME
+        model_name = DEFAULT_MODEL_NAME
 
         provider = self.language_model_manager.get_provider(provider_name)
         model_entity = provider.get_model_entity(model_name)

@@ -27,6 +27,7 @@ from .jieba_service import JiebaService
 from .jwt_service import JwtService
 from .keyword_table_service import KeywordTableService
 from .language_model_service import LanguageModelService
+from .model_provider_service import ModelProviderService
 from .oauth_service import OAuthService
 from .openapi_service import OpenAPIService
 from .process_rule_service import ProcessRuleService
@@ -65,6 +66,7 @@ __all__ = [
     "BuiltinAppService",
     "WorkflowService",
     "LanguageModelService",
+    "ModelProviderService",
     "AssistantAgentService",
     "FaissService",
     "AnalysisService",

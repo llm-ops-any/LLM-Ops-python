@@ -19,6 +19,7 @@ from .conversation_handler import ConversationHandler
 from .dataset_handler import DatasetHandler
 from .document_handler import DocumentHandler
 from .language_model_handler import LanguageModelHandler
+from .model_provider_handler import ModelProviderHandler
 from .oauth_handler import OAuthHandler
 from .openapi_handler import OpenAPIHandler
 from .segment_handler import SegmentHandler
@@ -43,6 +44,7 @@ __all__ = [
     "BuiltinAppHandler",
     "WorkflowHandler",
     "LanguageModelHandler",
+    "ModelProviderHandler",
     "AssistantAgentHandler",
     "AnalysisHandler",
     "WebAppHandler",

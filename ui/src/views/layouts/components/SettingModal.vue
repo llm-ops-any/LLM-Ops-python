@@ -8,6 +8,11 @@ import {
   useUpdatePassword,
 } from '@/hooks/use-account'
 import { useUploadImage } from '@/hooks/use-upload-file'
+import {
+  useGetModelProvider,
+  useTestModelProviderConnection,
+  useUpdateModelProvider,
+} from '@/hooks/use-model-provider'
 
 // 1.定义自定义组件所需数据
 const props = defineProps({
@@ -36,10 +41,41 @@ const updateAccount = async () => {
   accountStore.update(current_user.value)
 }
 
-// 3.关闭模态窗处理器
+// 3.大模型设置相关数据与处理器
+const activeMenu = ref<'account' | 'model_provider'>('account')
+const modelForm = ref({ base_url: '', api_key: '' })
+const updateApiKey = ref(false)
+const { setting: modelSetting, loadSetting } = useGetModelProvider()
+const { handleUpdateSetting } = useUpdateModelProvider()
+const { handleTestConnection } = useTestModelProviderConnection()
+
+// 加载大模型设置，密钥输入框始终为空且不进入修改态
+const loadModelProviderSetting = async () => {
+  await loadSetting()
+  modelForm.value.base_url = modelSetting.value.base_url
+  modelForm.value.api_key = ''
+  updateApiKey.value = false
+}
+
+// 保存大模型设置，密钥留空表示不修改已保存的密钥
+const handleSaveModelProvider = async () => {
+  const apiKey = updateApiKey.value ? modelForm.value.api_key.trim() : ''
+  const data = await handleUpdateSetting(modelForm.value.base_url.trim(), apiKey)
+  modelSetting.value = data
+  modelForm.value.api_key = ''
+  updateApiKey.value = false
+}
+
+// 测试大模型服务连通性，使用当前输入值，未填写则使用已保存配置
+const handleTestModelProvider = async () => {
+  const apiKey = updateApiKey.value ? modelForm.value.api_key.trim() : ''
+  await handleTestConnection(modelForm.value.base_url.trim(), apiKey)
+}
+
+// 4.关闭模态窗处理器
 const handleCancel = () => emits('update:visible', false)
 
-// 4.监听模态窗关闭事件
+// 5.监听模态窗关闭事件
 watch(
   () => props.visible,
   (newValue) => {
@@ -47,6 +83,11 @@ watch(
       // 如果为关闭模态窗则重置表单，并关闭所有输入框
       updatePassword.value = false
       updateName.value = false
+      updateApiKey.value = false
+      modelForm.value.api_key = ''
+    } else {
+      // 打开模态窗时拉取最新的大模型设置，保证展示的是当前生效配置
+      loadModelProviderSetting()
     }
 
     // 无论是开启还是关闭模态窗，均赋初始值，可以确保首次加载的时候数据正确展示
@@ -83,14 +124,33 @@ watch(
         <!-- 导航列表 -->
         <div class="flex flex-col gap-2">
           <div
-            class="cursor-pointer bg-gray-100 hover:bg-gray-200 rounded-lg h-8 leading-8 text-gray-700 hover:text-gray-900 px-4"
+            class="cursor-pointer rounded-lg h-8 leading-8 px-4"
+            :class="
+              activeMenu === 'account'
+                ? 'bg-gray-100 text-gray-900'
+                : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900'
+            "
+            data-testid="setting-menu-account"
+            @click="activeMenu = 'account'"
           >
             账号设置
+          </div>
+          <div
+            class="cursor-pointer rounded-lg h-8 leading-8 px-4"
+            :class="
+              activeMenu === 'model_provider'
+                ? 'bg-gray-100 text-gray-900'
+                : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900'
+            "
+            data-testid="setting-menu-model-provider"
+            @click="activeMenu = 'model_provider'"
+          >
+            大模型设置
           </div>
         </div>
       </div>
       <!-- 右侧内容 -->
-      <div class="flex-1 px-8">
+      <div v-if="activeMenu === 'account'" class="flex-1 px-8">
         <!-- 右侧标题 -->
         <div class="text-xl font-bold text-gray-700 mb-5">账号设置</div>
         <!-- 账号表单 -->
@@ -243,6 +303,93 @@ watch(
             <a-input readonly v-model="accountForm.email" />
           </a-form-item>
         </a-form>
+      </div>
+      <!-- 大模型设置 -->
+      <div v-else class="flex-1 px-8" data-testid="model-provider-setting">
+        <!-- 右侧标题 -->
+        <div class="text-xl font-bold text-gray-700 mb-5">大模型设置</div>
+        <!-- 大模型设置表单 -->
+        <a-form :model="modelForm" layout="vertical">
+          <a-form-item field="base_url">
+            <template #label>
+              <div class="flex items-center gap-1">
+                API 地址
+                <div class="text-red-700">*</div>
+              </div>
+            </template>
+            <a-input
+              v-model="modelForm.base_url"
+              placeholder="请输入模型服务地址，例如：https://token.uino.com/v1"
+              data-testid="model-provider-base-url"
+            />
+          </a-form-item>
+          <a-form-item field="api_key">
+            <template #label>
+              <div class="flex items-center gap-1">API Key</div>
+            </template>
+            <div v-if="updateApiKey" class="flex items-center gap-2 w-full">
+              <a-input-password
+                v-model="modelForm.api_key"
+                placeholder="请输入新的 API Key，留空则保持原有密钥不变"
+                data-testid="model-provider-api-key-input"
+              />
+              <a-button
+                class="rounded-lg"
+                @click="
+                  () => {
+                    updateApiKey = false
+                    modelForm.api_key = ''
+                  }
+                "
+              >
+                取消
+              </a-button>
+            </div>
+            <div v-else class="flex items-center gap-1">
+              <div
+                class="select-none tracking-widest text-gray-900"
+                data-testid="model-provider-api-key-mask"
+              >
+                {{ modelSetting.has_api_key ? '****' : '未配置' }}
+              </div>
+              <a-button
+                size="mini"
+                type="text"
+                class="!text-gray-700"
+                data-testid="model-provider-api-key-edit"
+                @click="updateApiKey = true"
+              >
+                <template #icon>
+                  <icon-edit />
+                </template>
+              </a-button>
+            </div>
+          </a-form-item>
+          <a-form-item field="source" label="配置来源">
+            <div class="text-gray-700" data-testid="model-provider-source">
+              {{ modelSetting.source_label || '-' }}
+            </div>
+          </a-form-item>
+          <a-form-item>
+            <div class="flex items-center gap-2">
+              <a-button data-testid="model-provider-test" @click="handleTestModelProvider">
+                测试连接
+              </a-button>
+              <a-button
+                type="primary"
+                class="rounded-lg"
+                data-testid="model-provider-save"
+                @click="handleSaveModelProvider"
+              >
+                保存
+              </a-button>
+            </div>
+          </a-form-item>
+        </a-form>
+        <div class="text-xs text-gray-500 leading-5">
+          说明：API
+          Key保存后仅显示****，不可查看与复制；密钥留空保存表示只修改地址。配置保存后无需重启服务即可生效。
+        </div>
       </div>
     </div>
   </a-modal>

@@ -12,6 +12,7 @@ from .app import App, AppDatasetJoin, AppConfig, AppConfigVersion
 from .conversation import Conversation, Message, MessageAgentThought
 from .dataset import Dataset, Document, Segment, KeywordTable, DatasetQuery, ProcessRule
 from .end_user import EndUser
+from .platform_setting import PlatformSetting
 from .upload_file import UploadFile
 from .workflow import Workflow, WorkflowResult
 
@@ -23,5 +24,6 @@ __all__ = [
     "Conversation", "Message", "MessageAgentThought",
     "Account", "AccountOAuth",
     "ApiKey", "EndUser",
+    "PlatformSetting",
     "Workflow", "WorkflowResult",
 ]

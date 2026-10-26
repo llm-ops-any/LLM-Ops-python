@@ -41,6 +41,12 @@ class FaissService:
 
     def convert_faiss_to_tool(self) -> BaseTool:
         """将Faiss向量数据库检索器转换成LangChain工具"""
+        # 0.同步最新的向量化实例：设置页改了API地址/Key后，本服务缓存的旧实例会继续用旧凭证
+        #   说明：FAISS 在查询时才调用 embeddings，此处赋值即可让检索跟随最新配置
+        #   坑：FAISS.embeddings 是只读 property（返回 self._embeddings，无 setter），
+        #       直接 `faiss.embeddings = x` 会抛 AttributeError: can't set attribute，必须写底层字段
+        self.faiss._embeddings = self.embeddings_service.embeddings
+
         # 1.将Faiss向量数据库转换成检索器
         retrieval = self.faiss.as_retriever(
             search_type="mmr",

@@ -23,7 +23,7 @@ from internal.core.agent.agents import AgentQueueManager, FunctionCallAgent
 from internal.core.agent.entities.agent_entity import AgentConfig
 from internal.core.agent.entities.queue_entity import QueueEvent
 from internal.core.language_model.entities.model_entity import ModelFeature
-from internal.core.language_model.providers.openai.chat import Chat
+from internal.core.language_model.providers.uino.chat import Chat
 from internal.core.memory import TokenBufferMemory
 from internal.entity.conversation_entity import InvokeFrom, MessageStatus
 from internal.lib.helper import build_query_with_attachments, build_attachment_metadata

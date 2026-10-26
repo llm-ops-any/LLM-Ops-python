@@ -29,6 +29,7 @@ import type {
   UpdateAppRequest,
   UpdateDraftAppConfigRequest,
 } from '@/models/app'
+import type { ChatAttachment } from '@/models/upload-file'
 import { useRouter } from 'vue-router'
 
 export const useGetApp = () => {
@@ -493,11 +494,12 @@ export const useDebugChat = () => {
   const handleDebugChat = async (
     app_id: string,
     query: string,
+    files: ChatAttachment[],
     onData: (event_response: Record<string, any>) => void,
   ) => {
     try {
       loading.value = true
-      await debugChat(app_id, query, onData)
+      await debugChat(app_id, query, files, onData)
     } finally {
       loading.value = false
     }

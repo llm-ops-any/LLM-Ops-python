@@ -219,43 +219,79 @@ export const upload = <T>(url: string, options: any = {}): Promise<T> => {
     // 4.创建xhr服务
     const xhr = new XMLHttpRequest()
 
-    // 5.初始化xhr请求并配置headers
+    // 5.保证promise只会被结算一次，避免任何分支漏掉resolve/reject导致界面一直loading
+    let settled = false
+    const finish = (action: () => void) => {
+      if (settled) return
+      settled = true
+      action()
+    }
+
+    // 6.初始化xhr请求并配置headers
     xhr.open(options.method, options.url)
     for (const key in options.headers) {
       xhr.setRequestHeader(key, options.headers[key])
     }
 
-    // 6.设置xhr响应格式并携带授权凭证（例如cookie）
+    // 7.设置xhr响应格式、超时时间并携带授权凭证（例如cookie）
     xhr.withCredentials = true
     xhr.responseType = 'json'
+    xhr.timeout = options.timeout ?? 180000
 
-    // 7.监听xhr状态变化并导出数据
+    // 8.监听xhr状态变化并导出数据
     xhr.onreadystatechange = async () => {
-      // 8.判断xhr的状态是不是为4，如果为4则代表已经传输完成（涵盖成功与失败）
-      if (xhr.readyState === 4) {
-        // 9.检查响应状态码，当HTTP状态码为200的时候表示请求成功
-        if (xhr.status === 200) {
-          // 10.判断业务状态码是否正常
-          const response = xhr.response
-          if (response.code === httpCode.success) {
-            resolve(response)
-          } else if (response.code === httpCode.unauthorized) {
-            clearCredential()
-            await router.replace({ path: '/auth/login' })
-          } else {
-            reject(xhr.response)
-          }
+      // 9.判断xhr的状态是不是为4，如果为4则代表已经传输完成（涵盖成功与失败）
+      if (xhr.readyState !== 4) return
+      const response = xhr.response
+
+      // 10.业务成功：HTTP 200 且业务状态码为 success
+      if (xhr.status === 200 && response?.code === httpCode.success) {
+        finish(() => resolve(response))
+        return
+      }
+
+      // 11.未授权：清理凭证并跳转登录页（必须结算，否则调用方会一直等待）
+      if (response?.code === httpCode.unauthorized) {
+        clearCredential()
+        try {
+          await router.replace({ path: '/auth/login' })
+        } catch {
+          // 忽略路由跳转异常
+        }
+        finish(() => reject(new Error('登录状态已过期，请重新登录')))
+        return
+      }
+
+      // 12.其它情况统一给出可读错误（例如nginx返回413/504时响应体不是JSON）
+      let message = response?.message
+      if (!message) {
+        if (xhr.status === 413) {
+          message = '文件体积超过服务器限制，请压缩后重试'
+        } else if (xhr.status === 504) {
+          message = '服务端处理超时，请稍后重试'
+        } else if (xhr.status === 0) {
+          message = '网络请求失败，请检查网络后重试'
         } else {
-          reject(xhr)
+          message = `上传失败(${xhr.status})，请稍后重试`
         }
       }
+      finish(() => reject(new Error(message)))
     }
 
-    // 10.添加xhr进度监听
+    // 13.监听网络异常、超时与取消，确保promise一定会结算
+    xhr.onerror = () => finish(() => reject(new Error('网络请求失败，请检查网络后重试')))
+    xhr.ontimeout = () => finish(() => reject(new Error('上传超时，请重试或上传更小的文件')))
+    xhr.onabort = () => finish(() => reject(new Error('上传已取消')))
+
+    // 14.添加xhr进度监听
     xhr.upload.onprogress = options.onprogress
 
-    // 11.发送请求
-    xhr.send(options.data)
+    // 15.发送请求
+    try {
+      xhr.send(options.data)
+    } catch (error: any) {
+      finish(() => reject(new Error(error?.message ?? '上传失败，请重试')))
+    }
   })
 }
 

@@ -55,6 +55,133 @@ def combine_documents(documents: list[Document]) -> str:
     return "\n\n".join([document.page_content for document in documents])
 
 
+def build_query_with_attachments(query: str, attachments: Any = None) -> str:
+    """将用户随消息上传的附件信息拼接进提问，供大模型作为上下文使用
+
+    附件数据由前端在上传解析后携带，格式为：
+    [{"name": "xxx.txt", "kind": "text|image|file", "text": "...", "url": "..."}]
+    - 有text的附件注入解析出的文本；没有text的(图片/二进制)注入文件地址，便于多模态模型读取
+    - 数量、单条长度、总长度都做上限保护，避免撑爆模型上下文
+    - 原始提问(message.query)保持不变，附件上下文只参与本次模型调用
+    """
+    # 1.导入放在函数内，避免lib层与entity层出现循环引用风险
+    from internal.entity.upload_file_entity import (
+        MAX_CHAT_ATTACHMENT_COUNT,
+        MAX_CHAT_ATTACHMENT_ONE_LENGTH,
+        MAX_CHAT_ATTACHMENT_TOTAL_LENGTH,
+    )
+
+    # 2.校验附件数据是否合法，不合法直接返回原始提问
+    if not isinstance(attachments, list) or len(attachments) == 0:
+        return query
+
+    # 3.循环处理附件，构建附件上下文文本
+    blocks = []
+    total_length = 0
+    for attachment in attachments[:MAX_CHAT_ATTACHMENT_COUNT]:
+        if not isinstance(attachment, dict):
+            continue
+        name = str(attachment.get("name") or "").strip() or f"附件{len(blocks) + 1}"
+        kind = str(attachment.get("kind") or "text").strip()
+        text = str(attachment.get("text") or "").strip()
+        url = str(attachment.get("url") or "").strip()
+
+        # 4.优先使用解析出的文本内容
+        if text:
+            # 4.1 单个附件超长截断
+            if len(text) > MAX_CHAT_ATTACHMENT_ONE_LENGTH:
+                text = text[:MAX_CHAT_ATTACHMENT_ONE_LENGTH] + "\n...(附件内容过长，已截断)"
+
+            # 4.2 附件总长度超限则停止追加
+            if total_length + len(text) > MAX_CHAT_ATTACHMENT_TOTAL_LENGTH:
+                blocks.append(f"【附件{len(blocks) + 1}】{name}\n(附件内容过多，已省略)")
+                break
+
+            total_length += len(text)
+            blocks.append(f"【附件{len(blocks) + 1}】{name}\n{text}")
+        elif url:
+            # 5.没有文本(图片/二进制文件)时注入文件地址，为多模态模型预留
+            kind_label = {"image": "图片", "file": "文件"}.get(kind, "文件")
+            blocks.append(
+                f"【附件{len(blocks) + 1}】{name}（{kind_label}）\n文件地址：{url}"
+            )
+
+    # 6.没有有效附件内容则直接返回原始提问
+    if not blocks:
+        return query
+
+    return (
+        f"{query}\n\n"
+        "-----\n"
+        f"用户随本条消息上传了{len(blocks)}个附件，以下为附件信息(文本内容或文件地址)，"
+        "请结合附件信息回答用户提问：\n\n"
+        + "\n\n".join(blocks)
+        + "\n-----"
+    )
+
+
+def build_attachment_metadata(attachments: Any = None, text_limit: int = 4000) -> list[dict]:
+    """将前端上传的附件精简成可入库的元信息列表
+
+    说明：
+    - 附件解析出的文本可能非常长(单文件最大30MB)，直接入库会让message表迅速膨胀，
+      因此文本只保留前text_limit个字符，足够历史消息展示与后续轮次引用
+    - 图片与二进制附件保留对象存储地址(url)，刷新页面后依然可以直接预览/下载
+    """
+    # 1.校验附件数据是否合法
+    if not isinstance(attachments, list) or len(attachments) == 0:
+        return []
+
+    # 2.导入放在函数内，避免lib层与entity层出现循环引用风险
+    from internal.entity.upload_file_entity import MAX_CHAT_ATTACHMENT_COUNT
+
+    # 3.循环精简每个附件的字段
+    metadata = []
+    for attachment in attachments[:MAX_CHAT_ATTACHMENT_COUNT]:
+        if not isinstance(attachment, dict):
+            continue
+        name = str(attachment.get("name") or "").strip()
+        text = str(attachment.get("text") or "").strip()
+        url = str(attachment.get("url") or "").strip()
+        if not name or (not text and not url):
+            continue
+
+        # 3.1 体积字段做安全转换，避免脏数据导致写入失败
+        try:
+            size = int(attachment.get("size") or 0)
+        except (TypeError, ValueError):
+            size = 0
+
+        metadata.append({
+            "name": name,
+            "extension": str(attachment.get("extension") or "").strip(),
+            "size": size,
+            "kind": str(attachment.get("kind") or ("text" if text else "file")).strip(),
+            "mime": str(attachment.get("mime") or "").strip(),
+            "url": url,
+            "text": text[:text_limit],
+            "truncated": bool(attachment.get("truncated")) or len(text) > text_limit,
+            "note": str(attachment.get("note") or "").strip(),
+        })
+
+    return metadata
+
+
+def dump_attachment_metadata(attachments: Any = None) -> list[dict]:
+    """将消息中持久化的附件元信息转换成响应数据
+
+    说明：历史消息列表不需要附件正文，剔除text字段避免返回大字段拖慢分页接口
+    """
+    if not isinstance(attachments, list):
+        return []
+
+    return [
+        {key: value for key, value in attachment.items() if key != "text"}
+        for attachment in attachments
+        if isinstance(attachment, dict)
+    ]
+
+
 def remove_fields(data_dict: dict, fields: list[str]) -> None:
     """根据传递的字段名移除字典中指定的字段"""
     for field in fields:

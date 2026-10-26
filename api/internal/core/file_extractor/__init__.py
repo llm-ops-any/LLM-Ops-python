@@ -6,5 +6,6 @@
 @File    : __init__.py.py
 """
 from .file_extractor import FileExtractor
+from .attachment_text_extractor import AttachmentTextExtractor
 
-__all__ = ["FileExtractor"]
+__all__ = ["FileExtractor", "AttachmentTextExtractor"]

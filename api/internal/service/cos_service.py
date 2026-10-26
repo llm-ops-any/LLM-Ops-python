@@ -27,15 +27,26 @@ class CosService:
     """腾讯云cos对象存储服务"""
     upload_file_service: UploadFileService
 
-    def upload_file(self, file: FileStorage, only_image: bool, account: Account) -> UploadFile:
-        """上传文件到腾讯云cos对象存储，上传后返回文件的信息"""
+    def upload_file(
+            self,
+            file: FileStorage,
+            only_image: bool,
+            account: Account,
+            allow_any_extension: bool = False,
+    ) -> UploadFile:
+        """上传文件到腾讯云cos对象存储，上传后返回文件的信息
+
+        :param allow_any_extension: 是否允许任意扩展名(对话附件场景使用，图片仍需满足图片校验)
+        """
         # 1.提取文件扩展名并检测是否可以上传
-        filename = file.filename
+        filename = file.filename or ""
         extension = filename.rsplit(".", 1)[-1] if "." in filename else ""
-        if extension.lower() not in (ALLOWED_IMAGE_EXTENSION + ALLOWED_DOCUMENT_EXTENSION):
-            raise FailException(f"该.{extension}扩展的文件不允许上传")
-        elif only_image and extension not in ALLOWED_IMAGE_EXTENSION:
+        if only_image and extension.lower() not in ALLOWED_IMAGE_EXTENSION:
             raise FailException(f"该.{extension}扩展的文件不支持上传，请上传正确的图片")
+        elif not allow_any_extension and extension.lower() not in (
+            ALLOWED_IMAGE_EXTENSION + ALLOWED_DOCUMENT_EXTENSION
+        ):
+            raise FailException(f"该.{extension}扩展的文件不允许上传")
 
         # 2.获取客户端+存储桶名字
         client = self._get_client()

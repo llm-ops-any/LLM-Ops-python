@@ -43,7 +43,13 @@ from internal.entity.conversation_entity import InvokeFrom, MessageStatus
 from internal.entity.dataset_entity import RetrievalSource
 from internal.entity.workflow_entity import WorkflowStatus
 from internal.exception import NotFoundException, ForbiddenException, ValidateErrorException, FailException
-from internal.lib.helper import remove_fields, get_value_type, generate_random_string
+from internal.lib.helper import (
+    remove_fields,
+    get_value_type,
+    generate_random_string,
+    build_query_with_attachments,
+    build_attachment_metadata,
+)
 from internal.model import (
     App,
     Account,
@@ -519,8 +525,17 @@ class AppService(BaseService):
 
         return app
 
-    def debug_chat(self, app_id: UUID, query: str, account: Account) -> Generator:
-        """根据传递的应用id+提问query向特定的应用发起会话调试"""
+    def debug_chat(
+            self,
+            app_id: UUID,
+            query: str,
+            account: Account,
+            attachments: list[dict] | None = None
+    ) -> Generator:
+        """根据传递的应用id+提问query向特定的应用发起会话调试
+
+        :param attachments: 随消息上传的附件文本列表，格式为[{name, text}]，只参与本次模型调用
+        """
         # 1.获取应用信息并校验权限
         app = self.get_app(app_id, account)
 
@@ -530,7 +545,7 @@ class AppService(BaseService):
         # 3.获取当前应用的调试会话信息
         debug_conversation = app.debug_conversation
 
-        # 4.新建一条消息记录
+        # 4.新建一条消息记录(同时持久化附件元信息，便于历史消息回显)
         message = self.create(
             Message,
             app_id=app_id,
@@ -538,6 +553,7 @@ class AppService(BaseService):
             invoke_from=InvokeFrom.DEBUGGER,
             created_by=account.id,
             query=query,
+            attachments=build_attachment_metadata(attachments),
             status=MessageStatus.NORMAL,
         )
 
@@ -592,7 +608,7 @@ class AppService(BaseService):
 
         agent_thoughts = {}
         for agent_thought in agent.stream({
-            "messages": [HumanMessage(query)],
+            "messages": [HumanMessage(build_query_with_attachments(query, attachments))],
             "history": history,
             "long_term_memory": debug_conversation.summary,
         }):

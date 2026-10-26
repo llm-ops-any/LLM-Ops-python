@@ -194,8 +194,8 @@ class AppHandler:
         if not req.validate():
             return validate_error_json(req.errors)
 
-        # 2.调用服务发起会话调试
-        response = self.app_service.debug_chat(app_id, req.query.data, current_user)
+        # 2.调用服务发起会话调试(携带附件文本，由服务层拼接到提问上下文中)
+        response = self.app_service.debug_chat(app_id, req.query.data, current_user, req.files.data)
 
         return compact_generate_response(response)
 

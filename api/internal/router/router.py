@@ -188,6 +188,11 @@ class Router:
         # 4.上传文件模块
         bp.add_url_rule("/upload-files/file", methods=["POST"], view_func=self.upload_file_handler.upload_file)
         bp.add_url_rule("/upload-files/image", methods=["POST"], view_func=self.upload_file_handler.upload_image)
+        bp.add_url_rule(
+            "/upload-files/attachment",
+            methods=["POST"],
+            view_func=self.upload_file_handler.upload_attachment,
+        )
 
         # 5.知识库模块
         bp.add_url_rule("/datasets", view_func=self.dataset_handler.get_datasets_with_page)

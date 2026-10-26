@@ -14,6 +14,7 @@ import type {
   UpdateDraftAppConfigRequest,
 } from '@/models/app'
 import type { BasePaginatorRequest, BaseResponse } from '@/models/base' // 获取应用基础信息
+import type { ChatAttachment } from '@/models/upload-file'
 
 // 获取应用基础信息
 export const getApp = (app_id: string) => {
@@ -69,9 +70,10 @@ export const updateDebugConversationSummary = (app_id: string, summary: string) 
 export const debugChat = (
   app_id: string,
   query: string,
+  files: ChatAttachment[],
   onData: (event_response: Record<string, any>) => void,
 ) => {
-  return ssePost(`/apps/${app_id}/conversations`, { body: { query } }, onData)
+  return ssePost(`/apps/${app_id}/conversations`, { body: { query, files } }, onData)
 }
 
 // 停止某次应用的调试会话

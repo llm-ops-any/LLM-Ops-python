@@ -13,10 +13,12 @@ from wtforms import StringField, IntegerField
 from wtforms.validators import DataRequired, Length, ValidationError, Optional, NumberRange
 
 from internal.entity.app_entity import AppStatus
-from internal.lib.helper import datetime_to_timestamp
+from internal.entity.upload_file_entity import MAX_CHAT_ATTACHMENT_COUNT
+from internal.lib.helper import datetime_to_timestamp, dump_attachment_metadata
 from internal.lib.validator import BuiltinIconValidator
 from internal.model import App, AppConfigVersion, Message
 from pkg.paginator import PaginatorReq
+from .schema import ListField
 
 
 class CreateAppReq(FlaskForm):
@@ -156,6 +158,33 @@ class DebugChatReq(FlaskForm):
     query = StringField("query", validators=[
         DataRequired("用户提问query不能为空"),
     ])
+    files = ListField("files", default=[])
+
+    def validate_files(self, field: ListField) -> None:
+        """校验随消息上传的附件列表，附件由前端上传解析后携带(name+text)"""
+        # 1.未传递附件时重置为空列表
+        if field.data is None:
+            field.data = []
+            return
+
+        # 2.校验数据类型与数量
+        if not isinstance(field.data, list):
+            raise ValidationError("附件列表格式错误")
+        if len(field.data) > MAX_CHAT_ATTACHMENT_COUNT:
+            raise ValidationError(f"单次提问最多携带{MAX_CHAT_ATTACHMENT_COUNT}个附件")
+
+        # 3.校验每个附件的数据结构
+        for attachment in field.data:
+            if not isinstance(attachment, dict):
+                raise ValidationError("附件数据格式错误")
+            if not str(attachment.get("name") or "").strip():
+                raise ValidationError("附件名称不能为空")
+            text = str(attachment.get("text") or "").strip()
+            url = str(attachment.get("url") or "").strip()
+            if not text and not url:
+                raise ValidationError("附件内容不能为空")
+            if len(text) > 100000:
+                raise ValidationError("单个附件内容过长，请重新上传")
 
 
 class GetDebugConversationMessagesWithPageReq(PaginatorReq):
@@ -175,6 +204,7 @@ class GetDebugConversationMessagesWithPageResp(Schema):
     total_token_count = fields.Integer(dump_default=0)
     latency = fields.Float(dump_default=0)
     agent_thoughts = fields.List(fields.Dict, dump_default=[])
+    attachments = fields.List(fields.Dict, dump_default=[])
     created_at = fields.Integer(dump_default=0)
 
     @pre_dump
@@ -184,6 +214,7 @@ class GetDebugConversationMessagesWithPageResp(Schema):
             "conversation_id": data.conversation_id,
             "query": data.query,
             "answer": data.answer,
+            "attachments": dump_attachment_metadata(data.attachments),
             "total_token_count": data.total_token_count,
             "latency": data.latency,
             "agent_thoughts": [{

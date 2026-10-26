@@ -24,6 +24,7 @@ from internal.entity.app_entity import AppStatus
 from internal.entity.conversation_entity import InvokeFrom, MessageStatus
 from internal.entity.dataset_entity import RetrievalSource
 from internal.exception import NotFoundException, ForbiddenException
+from internal.lib.helper import build_query_with_attachments, build_attachment_metadata
 from internal.model import App, Account, Conversation, Message
 from internal.schema.web_app_schema import WebAppChatReq
 from pkg.sqlalchemy import SQLAlchemy
@@ -84,7 +85,7 @@ class WebAppService(BaseService):
         # 4.获取校验后的运行时配置
         app_config = self.app_config_service.get_app_config(app)
 
-        # 5.新建一条消息记录
+        # 5.新建一条消息记录(同时持久化附件元信息，便于历史消息回显)
         message = self.create(
             Message,
             app_id=app.id,
@@ -92,6 +93,7 @@ class WebAppService(BaseService):
             invoke_from=InvokeFrom.WEB_APP,
             created_by=account.id,
             query=req.query.data,
+            attachments=build_attachment_metadata(req.files.data),
             status=MessageStatus.NORMAL,
         )
 
@@ -147,7 +149,7 @@ class WebAppService(BaseService):
         # 13.定义字典存储推理过程，并调用智能体获取消息
         agent_thoughts = {}
         for agent_thought in agent.stream({
-            "messages": [HumanMessage(req.query.data)],
+            "messages": [HumanMessage(build_query_with_attachments(req.query.data, req.files.data))],
             "history": history,
             "long_term_memory": conversation.summary,
         }):

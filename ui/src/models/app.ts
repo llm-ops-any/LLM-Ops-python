@@ -2,7 +2,8 @@ import {
   type BasePaginatorRequest,
   type BasePaginatorResponse,
   type BaseResponse,
-} from '@/models/base' // 获取应用信息响应结构
+} from '@/models/base'
+import { type ChatAttachment } from '@/models/upload-file' // 获取应用信息响应结构
 
 // 获取应用信息响应结构
 export type GetAppResponse = BaseResponse<{
@@ -120,6 +121,8 @@ export type GetDebugConversationMessagesWithPageResponse = BasePaginatorResponse
     latency: number
     created_at: number
   }[]
+  // 随消息上传的附件(服务端已持久化，历史消息与新消息都会回传，用于展示附件标签)
+  attachments?: ChatAttachment[]
   created_at: number
 }>
 

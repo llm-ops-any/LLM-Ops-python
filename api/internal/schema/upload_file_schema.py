@@ -9,8 +9,24 @@ from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileRequired, FileAllowed, FileSize
 from marshmallow import Schema, fields, pre_dump
 
-from internal.entity.upload_file_entity import ALLOWED_DOCUMENT_EXTENSION, ALLOWED_IMAGE_EXTENSION
+from internal.entity.upload_file_entity import (
+    ALLOWED_DOCUMENT_EXTENSION,
+    ALLOWED_IMAGE_EXTENSION,
+    MAX_CHAT_ATTACHMENT_SIZE,
+)
 from internal.model import UploadFile
+
+
+class UploadAttachmentReq(FlaskForm):
+    """对话附件上传请求结构体
+
+    说明：不限制扩展名 —— 能解析出文本的返回文本，图片与其它二进制文件返回对象存储URL，
+    以支撑后续的多模态(视觉)模型。
+    """
+    file = FileField("file", validators=[
+        FileRequired("上传文件不能为空"),
+        FileSize(max_size=MAX_CHAT_ATTACHMENT_SIZE, message="上传文件最大不能超过30MB"),
+    ])
 
 
 class UploadFileReq(FlaskForm):

@@ -120,6 +120,93 @@ def build_query_with_attachments(query: str, attachments: Any = None) -> str:
     )
 
 
+def is_model_image_attachment(attachment: Any) -> bool:
+    """判断附件是否可以交给多模态模型直接看图
+
+    说明(CR-16102701 / FR-01)：只有「kind=image + 没解析出文本 + http(s)地址」的附件才按图片传入。
+    - 有text的图片继续走文本注入，避免同一份内容既进文本又进图片；
+    - data:/本地路径这类地址模型侧拉不到，退回文本，不让模型收到一个取不回的图片引用。
+    """
+    if not isinstance(attachment, dict):
+        return False
+    if str(attachment.get("kind") or "").strip() != "image":
+        return False
+    if str(attachment.get("text") or "").strip():
+        return False
+    url = str(attachment.get("url") or "").strip().lower()
+    return url.startswith("http://") or url.startswith("https://")
+
+
+def extract_message_text(content: Any) -> str:
+    """把消息content归一化成纯文本
+
+    说明(CR-16102701 / FR-04)：视觉模型的消息内容是list(多模态)，而输入审核用的是
+    `keyword in content`——对list而言是元素比较，永远判不中，等于审核被静默绕过。
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        texts = []
+        for item in content:
+            if isinstance(item, str):
+                texts.append(item)
+            elif isinstance(item, dict) and item.get("type") == "text":
+                texts.append(str(item.get("text") or ""))
+        return "\n".join(text for text in texts if text)
+    return "" if content is None else str(content)
+
+
+def build_human_message_content(
+        query: str,
+        attachments: Any = None,
+        supports_image: bool = False,
+) -> Any:
+    """构造本轮人类消息内容：模型支持图片输入时返回多模态list，否则返回纯文本
+
+    说明(CR-16102701 / FR-01、FR-02)：
+    - supports_image 由调用方按 ModelFeature.IMAGE_INPUT 判定，这里不猜模型能力。
+      实测非视觉模型(deepseek-flash)收到多模态内容会**静默返回空**而不是报错，猜错的代价是用户拿不到任何回答。
+    - 为假或无图片附件时逐字退回 build_query_with_attachments，保证非视觉模型零回归。
+    - 文本类附件仍交给既有拼装处理，截断与上限规则只保留一处。
+    """
+    # 1.不支持图片输入、没有附件，直接按改造前的方式构造纯文本
+    if not supports_image or not isinstance(attachments, list) or len(attachments) == 0:
+        return build_query_with_attachments(query, attachments)
+
+    # 2.拆出可直传的图片与其它附件
+    from internal.entity.upload_file_entity import MAX_CHAT_ATTACHMENT_COUNT
+
+    images: list[tuple[str, str]] = []
+    others: list[Any] = []
+    for attachment in attachments[:MAX_CHAT_ATTACHMENT_COUNT]:
+        if is_model_image_attachment(attachment):
+            name = str(attachment.get("name") or "").strip() or f"图片{len(images) + 1}"
+            images.append((name, str(attachment.get("url") or "").strip()))
+        else:
+            others.append(attachment)
+
+    # 3.没有可直传的图片则退回纯文本
+    if not images:
+        return build_query_with_attachments(query, attachments)
+
+    # 4.文本段：提问 + 图片清单 + 其它附件
+    sections = [
+        str(query or ""),
+        "-----",
+        f"用户随本条消息上传了{len(images)}张图片（顺序与下方图片一致），请结合图片回答用户提问：",
+        "\n".join(f"【图片{index}】{name}" for index, (name, _) in enumerate(images, start=1)),
+    ]
+    if others:
+        sections.append(build_query_with_attachments("", others).strip())
+
+    # 5.组装多模态内容：文本在前，图片按上传顺序在后
+    content = [{"type": "text", "text": "\n\n".join(section for section in sections if section)}]
+    content.extend(
+        {"type": "image_url", "image_url": {"url": url}} for _, url in images
+    )
+    return content
+
+
 def build_attachment_metadata(attachments: Any = None, text_limit: int = 4000) -> list[dict]:
     """将前端上传的附件精简成可入库的元信息列表
 

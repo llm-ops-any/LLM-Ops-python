@@ -47,7 +47,7 @@ from internal.lib.helper import (
     remove_fields,
     get_value_type,
     generate_random_string,
-    build_query_with_attachments,
+    build_human_message_content,
     build_attachment_metadata,
 )
 from internal.model import (
@@ -608,7 +608,12 @@ class AppService(BaseService):
 
         agent_thoughts = {}
         for agent_thought in agent.stream({
-            "messages": [HumanMessage(build_query_with_attachments(query, attachments))],
+            # CR-16102701/FR-01~02：视觉模型把图片作为多模态内容传入，其余模型仍拼文件地址文本
+            "messages": [HumanMessage(content=build_human_message_content(
+                query,
+                attachments,
+                ModelFeature.IMAGE_INPUT in llm.features,
+            ))],
             "history": history,
             "long_term_memory": debug_conversation.summary,
         }):

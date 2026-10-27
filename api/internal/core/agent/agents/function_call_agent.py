@@ -27,6 +27,7 @@ from internal.core.agent.entities.agent_entity import (
 from internal.core.agent.adapters import StreamEvent, get_stream_adapter
 from internal.core.agent.entities.queue_entity import AgentThought, QueueEvent
 from internal.core.language_model.entities.model_entity import ModelFeature
+from internal.lib.helper import extract_message_text
 from internal.exception import FailException
 from .base_agent import BaseAgent
 
@@ -61,7 +62,8 @@ class FunctionCallAgent(BaseAgent):
         """预设操作，涵盖：输入审核、数据预处理、条件边等"""
         # 1.获取审核配置与用户输入query
         review_config = self.agent_config.review_config
-        query = state["messages"][-1].content
+        # CR-16102701/FR-04：多模态内容为list，`keyword in content` 会退化成元素比较而漏判，先归一化成文本
+        query = extract_message_text(state["messages"][-1].content)
 
         # 2.检测是否开启审核配置
         if review_config["enable"] and review_config["inputs_config"]["enable"]:

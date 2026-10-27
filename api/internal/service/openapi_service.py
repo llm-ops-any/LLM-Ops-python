@@ -23,6 +23,7 @@ from internal.entity.app_entity import AppStatus
 from internal.entity.conversation_entity import InvokeFrom, MessageStatus
 from internal.entity.dataset_entity import RetrievalSource
 from internal.exception import NotFoundException, ForbiddenException
+from internal.lib.helper import build_human_message_content, build_attachment_metadata
 from internal.model import Account, EndUser, Conversation, Message
 from internal.schema.openapi_schema import OpenAPIChatReq
 from pkg.response import Response
@@ -89,13 +90,14 @@ class OpenAPIService(BaseService):
         # 7.获取校验后的运行时配置
         app_config = self.app_config_service.get_app_config(app)
 
-        # 8.新建一条消息记录
+        # 8.新建一条消息记录(同时持久化附件元信息，query保持原始提问不变)
         message = self.create(Message, **{
             "app_id": app.id,
             "conversation_id": conversation.id,
             "invoke_from": InvokeFrom.SERVICE_API,
             "created_by": end_user.id,
             "query": req.query.data,
+            "attachments": build_attachment_metadata(req.files.data),
             "status": MessageStatus.NORMAL,
         })
 
@@ -148,9 +150,14 @@ class OpenAPIService(BaseService):
             ),
         )
 
-        # 15.定义智能体状态基础数据
+        # 15.定义智能体状态基础数据(附件内容只参与本次模型调用，不写入message.query)
         agent_state = {
-            "messages": [HumanMessage(req.query.data)],
+            # CR-16102701/FR-01~02：视觉模型把图片作为多模态内容传入，其余模型仍拼文件地址文本
+            "messages": [HumanMessage(content=build_human_message_content(
+                req.query.data,
+                req.files.data,
+                ModelFeature.IMAGE_INPUT in llm.features,
+            ))],
             "history": history,
             "long_term_memory": conversation.summary,
         }

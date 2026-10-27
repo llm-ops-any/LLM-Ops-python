@@ -26,7 +26,7 @@ from internal.core.language_model.entities.model_entity import ModelFeature
 from internal.core.language_model.providers.uino.chat import Chat
 from internal.core.memory import TokenBufferMemory
 from internal.entity.conversation_entity import InvokeFrom, MessageStatus
-from internal.lib.helper import build_query_with_attachments, build_attachment_metadata
+from internal.lib.helper import build_human_message_content, build_attachment_metadata
 from internal.model import Account, Message
 from internal.schema.assistant_agent_schema import GetAssistantAgentMessagesWithPageReq
 from internal.task.app_task import auto_create_app
@@ -108,7 +108,12 @@ class AssistantAgentService(BaseService):
 
         agent_thoughts = {}
         for agent_thought in agent.stream({
-            "messages": [HumanMessage(build_query_with_attachments(query, attachments))],
+            # CR-16102701/FR-01~02：视觉模型把图片作为多模态内容传入，其余模型仍拼文件地址文本
+            "messages": [HumanMessage(content=build_human_message_content(
+                query,
+                attachments,
+                ModelFeature.IMAGE_INPUT in llm.features,
+            ))],
             "history": history,
             "long_term_memory": conversation.summary,
         }):

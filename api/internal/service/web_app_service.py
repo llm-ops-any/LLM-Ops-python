@@ -24,7 +24,7 @@ from internal.entity.app_entity import AppStatus
 from internal.entity.conversation_entity import InvokeFrom, MessageStatus
 from internal.entity.dataset_entity import RetrievalSource
 from internal.exception import NotFoundException, ForbiddenException
-from internal.lib.helper import build_query_with_attachments, build_attachment_metadata
+from internal.lib.helper import build_human_message_content, build_attachment_metadata
 from internal.model import App, Account, Conversation, Message
 from internal.schema.web_app_schema import WebAppChatReq
 from pkg.sqlalchemy import SQLAlchemy
@@ -149,7 +149,12 @@ class WebAppService(BaseService):
         # 13.定义字典存储推理过程，并调用智能体获取消息
         agent_thoughts = {}
         for agent_thought in agent.stream({
-            "messages": [HumanMessage(build_query_with_attachments(req.query.data, req.files.data))],
+            # CR-16102701/FR-01~02：视觉模型把图片作为多模态内容传入，其余模型仍拼文件地址文本
+            "messages": [HumanMessage(content=build_human_message_content(
+                req.query.data,
+                req.files.data,
+                ModelFeature.IMAGE_INPUT in llm.features,
+            ))],
             "history": history,
             "long_term_memory": conversation.summary,
         }):

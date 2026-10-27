@@ -120,6 +120,11 @@ class BaseLanguageModel(LCBaseLanguageModel, ABC):
             content = getattr(message, "content", "")
             if isinstance(content, str) and content:
                 num_tokens += len(encoding.encode(content))
+            elif isinstance(content, list):
+                # CR-16102701/FR-04：多模态内容只累加文本片段，图片无法用tiktoken编码，故统计偏低(见风险R-04)
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        num_tokens += len(encoding.encode(str(item.get("text") or "")))
             tool_calls = getattr(message, "tool_calls", None)
             if tool_calls:
                 num_tokens += len(encoding.encode(json.dumps(tool_calls, ensure_ascii=False)))

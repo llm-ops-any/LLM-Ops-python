@@ -33,7 +33,10 @@ const errors = ref<Record<string, string>>({})
 openAPIEndpoints.forEach((ep) => {
   ep.fields.forEach((field) => {
     if (values[field.name] === undefined) {
-      values[field.name] = field.defaultValue ?? (field.type === 'boolean' ? false : '')
+      // 附件字段的初值必须是空数组：空数组在 buildRequest 里会被跳过，等价于「不传该字段」
+      values[field.name] = field.type === 'files'
+        ? []
+        : field.defaultValue ?? (field.type === 'boolean' ? false : '')
     }
   })
 })
@@ -98,14 +101,24 @@ const extraBody = (ep: OpenAPIEndpoint) => {
 }
 
 // 7.等价 curl：默认遮蔽凭证，复制时给完整版
+// 附件正文可能上万字符，面板默认折叠成预览；勾选「展开附件内容」才显示全文
+const expandAttachments = ref(false)
 const curlText = computed(() =>
   endpoint.value
-    ? buildCurl(endpoint.value, values, { maskCredential: true, extraBody: extraBody(endpoint.value) })
+    ? buildCurl(endpoint.value, values, {
+        maskCredential: true,
+        extraBody: extraBody(endpoint.value),
+        collapseAttachments: !expandAttachments.value,
+      })
     : '',
 )
+// 复制走这个版本：凭证完整、附件正文也完整，保证命令粘贴到终端可以直接执行
 const curlFullText = computed(() =>
   endpoint.value
-    ? buildCurl(endpoint.value, values, { maskCredential: false, extraBody: extraBody(endpoint.value) })
+    ? buildCurl(endpoint.value, values, {
+        maskCredential: false,
+        extraBody: extraBody(endpoint.value),
+      })
     : '',
 )
 
@@ -285,6 +298,9 @@ const handleClearSession = () => {
         <p class="mt-1 text-sm text-gray-500">
           不用写代码就能调通开放 API。这里的业务请求<b>只带下方所选的 API Key、不带你的登录态</b>，
           因此页面结果与第三方真实调用完全一致。
+          例外是<b>附件上传</b>：文件由平台上传解析（走你的登录态），再作为 <code class="text-xs">files</code>
+          随请求发出；第三方调用需自备 <code class="text-xs">text</code> 正文或可公开访问的
+          <code class="text-xs">url</code>。
         </p>
       </div>
       <router-link to="/openapi/api-keys" class="flex-shrink-0">
@@ -332,6 +348,7 @@ const handleClearSession = () => {
           :curl-full="curlFullText"
           :error="errorText"
           :loading="loading"
+          v-model:expand-attachments="expandAttachments"
           @clear-raw="rawStream = ''"
         />
       </a-card>

@@ -17,10 +17,13 @@ const props = defineProps<{
   error: string
   /** 是否正在请求中 */
   loading: boolean
+  /** 等价 curl 是否展开附件正文全文（默认折叠，避免超长正文拖慢渲染） */
+  expandAttachments: boolean
 }>()
 
 const emits = defineEmits<{
   (e: 'clear-raw'): void
+  (e: 'update:expandAttachments', value: boolean): void
 }>()
 
 const activeTab = ref('answer')
@@ -45,6 +48,9 @@ const copyText = async (text: string, tip: string) => {
 
 // 复制 curl 时给的是含完整 Key 的版本，否则无法拿去终端复跑
 const handleCopyCurl = () => copyText(props.curlFull, '已复制（含完整 API Key，请勿外传）')
+
+// 请求体里是否带附件：带附件时才需要「展开附件内容」开关
+const hasFilesInBody = computed(() => /"files"\s*:/.test(props.curl))
 </script>
 
 <template>
@@ -146,6 +152,15 @@ const handleCopyCurl = () => copyText(props.curlFull, '已复制（含完整 API
             <div class="flex items-center gap-2">
               <a-checkbox v-model="revealCredential" class="!text-xs">
                 显示完整 Key
+              </a-checkbox>
+              <!-- 附件正文可能上万字符：默认只显示前200字符，复制始终是全文 -->
+              <a-checkbox
+                v-if="hasFilesInBody"
+                :model-value="expandAttachments"
+                class="!text-xs"
+                @change="(value: any) => emits('update:expandAttachments', Boolean(value))"
+              >
+                展开附件内容
               </a-checkbox>
               <a-button type="text" size="mini" @click="handleCopyCurl">
                 复制（含完整 Key）

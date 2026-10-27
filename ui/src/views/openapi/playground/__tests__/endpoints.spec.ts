@@ -79,6 +79,20 @@ describe('buildRequest —— 元数据到请求的组装', () => {
 
     expect(built.url).toBe('/openapi/chat/tasks//stop')
   })
+
+  it('空附件数组被跳过：不带附件时 body 不出现 files 字段', () => {
+    const built = buildRequest(chat, { api_key: 'k', app_id: APP_ID, query: 'hi', files: [] })
+
+    expect(built.body).toEqual({ app_id: APP_ID, query: 'hi' })
+    expect(built.body.files).toBeUndefined()
+  })
+
+  it('带附件时 files 原样进入 body', () => {
+    const files = [{ name: '报告.pdf', kind: 'text', text: '正文' }]
+    const built = buildRequest(chat, { api_key: 'k', app_id: APP_ID, query: 'hi', files })
+
+    expect(built.body.files).toEqual(files)
+  })
 })
 
 describe('buildCurl —— 元数据到等价 curl', () => {
@@ -110,6 +124,29 @@ describe('buildCurl —— 元数据到等价 curl', () => {
 
     expect(curl).toContain(`--header 'Authorization: Bearer llmops-v1/su****'`)
     expect(curl).not.toContain('supersecretkey')
+  })
+
+  it('collapseAttachments 只影响展示，完整版仍带附件正文全文', async () => {
+    const buildCurl = await importBuildCurl('/api')
+    const longText = 'x'.repeat(500)
+    const values = {
+      api_key: 'k',
+      app_id: APP_ID,
+      query: 'hi',
+      files: [{ name: 'a.txt', kind: 'text', text: longText }],
+    }
+
+    const collapsed = buildCurl(chat, values, {
+      origin: 'https://play.example.com',
+      collapseAttachments: true,
+    })
+    const full = buildCurl(chat, values, { origin: 'https://play.example.com' })
+
+    expect(collapsed).toContain('此处为面板预览')
+    expect(full).not.toContain('此处为面板预览')
+    expect(full).toContain(longText)
+    // 折叠是深拷贝，不能污染原始表单值
+    expect(values.files[0].text).toHaveLength(500)
   })
 
   it('apiPrefix 是绝对地址时不再拼 origin（dev 直连后端的情形）', async () => {

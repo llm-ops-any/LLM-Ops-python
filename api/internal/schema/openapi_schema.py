@@ -11,8 +11,11 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, BooleanField
 from wtforms.validators import DataRequired, UUID, Optional, ValidationError
 
+from .chat_attachment_schema import ChatAttachmentsMixin
+from .schema import ListField
 
-class OpenAPIChatReq(FlaskForm):
+
+class OpenAPIChatReq(ChatAttachmentsMixin, FlaskForm):
     """开放API聊天接口请求结构体"""
     app_id = StringField("app_id", validators=[
         DataRequired("应用id不能为空"),
@@ -27,6 +30,8 @@ class OpenAPIChatReq(FlaskForm):
         DataRequired("用户提问query不能为空"),
     ])
     stream = BooleanField("stream", default=True)
+    # 随提问上传的附件(前端上传解析后回传)，校验规则与调试对话/WebApp/辅助Agent统一走Mixin
+    files = ListField("files", default=[])
 
     def validate_conversation_id(self, field: StringField) -> None:
         """自定义校验conversation_id函数"""

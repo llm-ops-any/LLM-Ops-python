@@ -14,7 +14,8 @@ export interface EndpointField {
   label: string
   /** 位置：header 不进 body；path 用于替换路径占位符 */
   in: 'body' | 'path' | 'header'
-  type: 'string' | 'boolean' | 'enum'
+  /** files 表示该字段由附件选择器渲染（值为 ChatAttachment[]） */
+  type: 'string' | 'boolean' | 'enum' | 'files'
   required: boolean
   defaultValue?: string | boolean
   placeholder?: string
@@ -44,6 +45,16 @@ export interface OpenAPIEndpoint {
 
 /** 参与 UUID 校验的字段名（与后端 schema 的 UUID 字段对齐） */
 export const UUID_FIELDS = ['app_id', 'end_user_id', 'conversation_id', 'task_id']
+
+/**
+ * 单条消息可携带的附件上限
+ * 与后端 api/internal/entity/upload_file_entity.py 的
+ * MAX_CHAT_ATTACHMENT_COUNT / MAX_CHAT_ATTACHMENT_SIZE 保持一致（前端先拦，避免白上传）
+ */
+export const ATTACHMENT_LIMIT = {
+  count: 5,
+  size: 30 * 1024 * 1024,
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -83,6 +94,14 @@ export const openAPIEndpoints: OpenAPIEndpoint[] = [
         required: true,
         placeholder: '例如：帮我查询广州今天的天气',
         tip: '不能为空；对话内容会作为该应用的输入',
+      },
+      {
+        name: 'files',
+        label: '附件',
+        in: 'body',
+        type: 'files',
+        required: false,
+        tip: '可选。文档会自动解析成文本一起提问，图片交给视觉模型识别；最多 5 个、单个不超过 30MB。附件由平台上传解析（走登录态），对话请求仍只带 API Key',
       },
       {
         name: 'stream',
@@ -157,12 +176,14 @@ export const buildRequest = (
   // 2.提取凭证字段的值
   const credential = String(values[endpoint.credentialField] ?? '')
 
-  // 3.组装请求体：只放 in === 'body' 的字段，跳过空串 / null / undefined
+  // 3.组装请求体：只放 in === 'body' 的字段，跳过空串 / null / undefined / 空数组
+  //   空数组必须跳过：不带附件时请求体不能出现 files 字段，保持与老版本字节级一致
   const body: Record<string, any> = {}
   endpoint.fields.forEach((field) => {
     if (field.in !== 'body') return
     const value = values[field.name]
     if (value === undefined || value === null || value === '') return
+    if (Array.isArray(value) && value.length === 0) return
     body[field.name] = value
   })
 
@@ -193,6 +214,26 @@ export const maskCredential = (value: string): string => {
 }
 
 /**
+ * 把请求体里的附件正文折叠成预览文案
+ * 只用于面板渲染：附件正文最长可达上万字符，全量渲染会让面板卡顿；
+ * 但「复制」给的是未折叠的完整 curl，保证命令可以直接执行。
+ */
+const collapseAttachmentText = (body: Record<string, any>): Record<string, any> => {
+  if (!Array.isArray(body?.files)) return body
+  return {
+    ...body,
+    files: body.files.map((file: any) => {
+      const text = typeof file?.text === 'string' ? file.text : ''
+      if (text.length <= 200) return file
+      return {
+        ...file,
+        text: `${text.slice(0, 200)}…（共 ${text.length} 字符，此处为面板预览，复制到终端的命令为完整内容）`,
+      }
+    }),
+  }
+}
+
+/**
  * 元数据 + 表单值 → 等价 curl 命令
  * 该命令可原样粘贴到终端执行
  */
@@ -203,6 +244,8 @@ export const buildCurl = (
     origin?: string
     maskCredential?: boolean
     extraBody?: Record<string, any>
+    /** 为 true 时只渲染附件正文前200字符（面板预览用，不要用在复制场景） */
+    collapseAttachments?: boolean
   } = {},
 ): string => {
   const { url, headers, body } = buildRequest(endpoint, values, options.extraBody)
@@ -214,6 +257,7 @@ export const buildCurl = (
   const authValue = options.maskCredential
     ? `Bearer ${maskCredential(headers.Authorization)}`
     : headers.Authorization
+  const rawBody = options.collapseAttachments ? collapseAttachmentText(body) : body
 
   // curl 的单引号包裹：把内部的单引号转义掉，避免命令被截断
   const quote = (text: string) => `'${text.replace(/'/g, "'\\''")}'`
@@ -221,7 +265,7 @@ export const buildCurl = (
     `curl --location --request ${endpoint.method} ${quote(fullUrl)} \\`,
     `--header ${quote(`Authorization: ${authValue}`)} \\`,
     `--header ${quote('Content-Type: application/json')} \\`,
-    `--data-raw ${quote(JSON.stringify(body, null, 4))}`,
+    `--data-raw ${quote(JSON.stringify(rawBody, null, 4))}`,
   ]
 
   return lines.join('\n')

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { EndpointField, OpenAPIEndpoint } from '../endpoints'
+import { ATTACHMENT_LIMIT, type EndpointField, type OpenAPIEndpoint } from '../endpoints'
+import AttachmentInput from './AttachmentInput.vue'
 
 // 本组件不认识任何具体端点，一切渲染都由 endpoint 元数据驱动
 
@@ -73,9 +74,18 @@ const hasSession = computed(
         <span v-else-if="field.in === 'header'" class="text-xs font-normal text-gray-400">（请求头）</span>
       </div>
 
+      <!-- 附件类型：选文件 → 上传解析 → 得到 ChatAttachment[] -->
+      <AttachmentInput
+        v-if="field.type === 'files'"
+        :model-value="values[field.name] ?? []"
+        :limit="ATTACHMENT_LIMIT"
+        :disabled="loading"
+        @update:model-value="(files: any[]) => updateField(field.name, files)"
+      />
+
       <!-- 布尔类型 -->
       <a-switch
-        v-if="field.type === 'boolean'"
+        v-else-if="field.type === 'boolean'"
         :model-value="Boolean(values[field.name])"
         @change="(value: any) => updateField(field.name, value)"
       />

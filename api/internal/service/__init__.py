@@ -13,6 +13,7 @@ from .api_tool_service import ApiToolService
 from .app_config_service import AppConfigService
 from .app_service import AppService
 from .assistant_agent_service import AssistantAgentService
+from .audio_service import AudioService
 from .base_service import BaseService
 from .builtin_app_service import BuiltinAppService
 from .builtin_tool_service import BuiltinToolService
@@ -33,6 +34,7 @@ from .openapi_service import OpenAPIService
 from .process_rule_service import ProcessRuleService
 from .retrieval_service import RetrievalService
 from .segment_service import SegmentService
+from .speech_provider_service import SpeechProviderService
 from .upload_file_service import UploadFileService
 from .vector_database_service import VectorDatabaseService
 from .web_app_service import WebAppService
@@ -68,6 +70,8 @@ __all__ = [
     "LanguageModelService",
     "ModelProviderService",
     "AssistantAgentService",
+    "AudioService",
+    "SpeechProviderService",
     "FaissService",
     "AnalysisService",
     "WebAppService",

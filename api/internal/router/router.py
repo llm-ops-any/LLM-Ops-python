@@ -32,6 +32,7 @@ from internal.handler import (
     WebAppHandler,
     ConversationHandler,
     ModelProviderHandler,
+    AudioHandler,
 )
 
 
@@ -60,6 +61,7 @@ class Router:
     web_app_handler: WebAppHandler
     conversation_handler: ConversationHandler
     model_provider_handler: ModelProviderHandler
+    audio_handler: AudioHandler
 
     def register_router(self, app: Flask):
         """注册路由"""
@@ -484,6 +486,29 @@ class Router:
             view_func=self.model_provider_handler.test_model_provider_connection,
         )
 
-        # 18.在应用上注册蓝图
+        # 18.语音服务模块（CR-16102803）
+        bp.add_url_rule("/speech-provider", view_func=self.audio_handler.get_speech_provider)
+        bp.add_url_rule(
+            "/speech-provider",
+            methods=["POST"],
+            view_func=self.audio_handler.update_speech_provider,
+        )
+        bp.add_url_rule(
+            "/speech-provider/test",
+            methods=["POST"],
+            view_func=self.audio_handler.test_speech_provider,
+        )
+        bp.add_url_rule(
+            "/audio/audio-to-text",
+            methods=["POST"],
+            view_func=self.audio_handler.audio_to_text,
+        )
+        bp.add_url_rule(
+            "/audio/message-to-audio",
+            methods=["POST"],
+            view_func=self.audio_handler.message_to_audio,
+        )
+
+        # 19.在应用上注册蓝图
         app.register_blueprint(bp)
         app.register_blueprint(openapi_bp)

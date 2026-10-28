@@ -11,6 +11,7 @@ import {
 import MarkdownIt from 'markdown-it'
 import DotFlashing from '@/components/DotFlashing.vue'
 import AgentThought from './AgentThought.vue'
+import { useAudioPlayer } from '@/hooks/use-audio'
 import 'github-markdown-css'
 
 // 1.定义自定义组件所需数据
@@ -33,8 +34,23 @@ const props = defineProps({
   },
   suggested_questions: { type: Array as PropType<string[]>, default: () => [], required: false },
   message_class: { type: String, default: '!bg-gray-100', required: false },
+  // CR-16102803 / FR-06：消息 id（朗读需要）+ 应用级 TTS 开关
+  message_id: { type: String, default: '', required: false },
+  enable_tts: { type: Boolean, default: false, required: false },
 })
 const emits = defineEmits(['selectSuggestedQuestion'])
+
+// CR-16102803 / FR-03 / FR-04：消息朗读。引擎由「设置 → 语音服务」决定，
+// browser 档走系统朗读（零请求），服务端档走 SSE 流式 PCM。
+const { loading: ttsLoading, isPlaying, play, stop } = useAudioPlayer()
+// 有消息 id、应用开了 TTS、且答案已生成完才显示按钮，避免流式过程中点
+const canPlayTts = computed(
+  () => props.enable_tts && Boolean(props.message_id) && props.answer.trim() !== '' && !props.loading,
+)
+const handlePlayTts = () => {
+  if (!canPlayTts.value) return
+  play(props.answer, props.message_id)
+}
 // linkify: 裸 URL 自动转链接；breaks: 单个换行也换行
 const md = MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -199,6 +215,23 @@ const toggleExpand = () => {
           </a-button>
         </a-space>
         <!-- 操作 -->
+        <a-space v-if="canPlayTts" class="text-xs">
+          <a-tooltip :content="isPlaying ? '停止朗读' : '朗读这段话'">
+            <a-button
+              size="mini"
+              type="text"
+              :loading="ttsLoading && !isPlaying"
+              class="!text-gray-500 !px-1"
+              data-testid="message-tts-play"
+              @click="handlePlayTts"
+            >
+              <template #icon>
+                <icon-pause v-if="isPlaying" />
+                <icon-play-circle v-else />
+              </template>
+            </a-button>
+          </a-tooltip>
+        </a-space>
       </div>
       <!-- 建议问题列表 -->
       <div v-if="props.suggested_questions.length > 0" class="flex flex-col gap-2">

@@ -6,6 +6,8 @@ import ReviewConfigAbilityItem from './abilities/ReviewConfigAbilityItem.vue'
 import DatasetsAbilityItem from './abilities/DatasetsAbilityItem.vue'
 import ToolsAbilityItem from './abilities/ToolsAbilityItem.vue'
 import WorkflowsAbilityItem from './abilities/WorkflowsAbilityItem.vue'
+import SpeechToTextAbilityItem from './abilities/SpeechToTextAbilityItem.vue'
+import TextToSpeechAbilityItem from './abilities/TextToSpeechAbilityItem.vue'
 
 // 1.定义自定义组件所需数据
 const props = defineProps({
@@ -21,6 +23,8 @@ const defaultActivateKeys = [
   'opening',
   'suggested_after_answer',
   'review_config',
+  'speech_to_text',
+  'text_to_speech',
 ]
 </script>
 
@@ -126,6 +130,30 @@ const defaultActivateKeys = [
         <!-- 内容审核 -->
         <review-config-ability-item
           :review_config="props.draft_app_config.review_config"
+          :app_id="props.app_id"
+        />
+        <!-- 语音转文本（CR-16102803） -->
+        <speech-to-text-ability-item
+          :speech_to_text="props.draft_app_config.speech_to_text || { enable: false }"
+          @update:speech_to_text="
+            (speech_to_text) =>
+              emits('update:draft_app_config', {
+                ...props.draft_app_config,
+                speech_to_text,
+              })
+          "
+          :app_id="props.app_id"
+        />
+        <!-- 文本转语音（CR-16102803） -->
+        <text-to-speech-ability-item
+          :text_to_speech="props.draft_app_config.text_to_speech || { enable: false }"
+          @update:text_to_speech="
+            (text_to_speech) =>
+              emits('update:draft_app_config', {
+                ...props.draft_app_config,
+                text_to_speech,
+              })
+          "
           :app_id="props.app_id"
         />
       </a-collapse>

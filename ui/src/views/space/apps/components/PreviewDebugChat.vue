@@ -38,6 +38,14 @@ const props = defineProps({
   },
   opening_statement: { type: String, default: '', required: true },
   opening_questions: { type: Array as PropType<string[]>, default: () => [], required: true },
+  // CR-16102803 / FR-06：应用级「文本转语音」开关，决定消息上是否出现播放按钮
+  text_to_speech: {
+    type: Object as PropType<{ enable: boolean }>,
+    default: () => {
+      return { enable: false }
+    },
+    required: false,
+  },
 })
 const chatInputRef = ref<InstanceType<typeof ChatInputBar> | null>(null)
 const message_id = ref('')
@@ -253,6 +261,8 @@ onMounted(async () => {
                 :agent_thoughts="item.agent_thoughts"
                 :answer="item.answer"
                 :app="props.app"
+                :message_id="item.id"
+                :enable_tts="Boolean(props.text_to_speech?.enable)"
                 :suggested_questions="item.id === message_id ? suggested_questions : []"
                 :loading="item.id === message_id && debugChatLoading"
                 :latency="item.latency"

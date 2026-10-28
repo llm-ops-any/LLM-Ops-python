@@ -70,6 +70,7 @@ onMounted(async () => {
           :suggested_after_answer="draftAppConfigForm.suggested_after_answer"
           :opening_questions="draftAppConfigForm.opening_questions"
           :opening_statement="draftAppConfigForm.opening_statement"
+          :text_to_speech="draftAppConfigForm.text_to_speech || { enable: false }"
           :app="props.app"
           :app_id="props.app?.id"
         />

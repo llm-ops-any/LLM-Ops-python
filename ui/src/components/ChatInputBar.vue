@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { uploadFileText } from '@/services/upload-file'
 import type { ChatAttachment, ChatAttachmentKind } from '@/models/upload-file'
+import { useAudioToText, useSpeechEngine } from '@/hooks/use-audio'
 
 // 1.定义组件所需数据
 const props = defineProps({
@@ -191,11 +192,17 @@ const handleFilesChange = async (event: Event) => {
   }
 }
 
-// 9.定义语音输入相关数据与函数(基于浏览器 Web Speech API)
+// 9.定义语音输入相关数据与函数
+//    CR-16102803：按「设置 → 语音服务」的引擎分派 ——
+//      dashscope → 录 16k WAV 上传给服务端识别（Paraformer 不支持 webm，见 D-12）；
+//      browser / omni → 沿用浏览器 Web Speech API（omni 档不提供服务端 ASR，见 D-08）。
+const { engine, ensure: ensureSpeechEngine } = useSpeechEngine()
+const { recorder: wavRecorder, recognize } = useAudioToText()
 let recognition: any = null
 let recordBase = ''
 let recordFinal = ''
 
+// 释放浏览器识别资源
 const destroyRecognition = () => {
   if (!recognition) return
   try {
@@ -210,7 +217,45 @@ const destroyRecognition = () => {
   recording.value = false
 }
 
-const toggleRecord = () => {
+// 进入组件时拉一次引擎配置（失败不影响录音，退回浏览器识别）
+onMounted(() => {
+  ensureSpeechEngine().catch(() => {})
+})
+
+// 服务端识别路径：录音 → 上传 → 回填
+const toggleServerRecord = async () => {
+  if (recording.value) {
+    recording.value = false
+    const blob = await wavRecorder.stop()
+    if (!blob) {
+      Message.warning('没有录到声音，请重新说一次')
+      return
+    }
+    try {
+      const text = await recognize(blob)
+      if (text) {
+        query.value = `${query.value}${text}`
+        autoResize()
+        Message.success('语音转文本成功')
+      }
+    } catch (error: any) {
+      Message.error(error?.message || '语音识别失败，请重试')
+    }
+    return
+  }
+
+  try {
+    await wavRecorder.start()
+    recording.value = true
+    Message.info('正在录音，再次点击结束')
+  } catch (error: any) {
+    Message.error(error?.message || '无法启动录音')
+    recording.value = false
+  }
+}
+
+// 浏览器识别路径（原逻辑，函数体未改动）
+const toggleBrowserRecord = () => {
   // 9.1 正在录音则停止录音
   if (recording.value) {
     destroyRecognition()
@@ -278,6 +323,15 @@ const toggleRecord = () => {
     Message.error('语音识别启动失败，请重试')
     destroyRecognition()
   }
+}
+
+// 语音输入总入口：按引擎分派（dashscope 走服务端，其余走浏览器）
+const toggleRecord = () => {
+  if (engine.value === 'dashscope') {
+    toggleServerRecord()
+    return
+  }
+  toggleBrowserRecord()
 }
 
 // 10.组件卸载时释放语音识别资源

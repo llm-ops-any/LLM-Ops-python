@@ -5,6 +5,7 @@
 @Author  : thezehui@gmail.com
 @File    : agent_queue_manager.py
 """
+import os
 import queue
 import time
 import uuid
@@ -16,6 +17,21 @@ from redis import Redis
 
 from internal.core.agent.entities.queue_entity import AgentThought, QueueEvent
 from internal.entity.conversation_entity import InvokeFrom
+
+# CR-16102806 / FIX-3：默认静默超时（秒）。
+# 语义与"总超时"不同——总超时管任务太大，静默超时管链路已死。
+# 实测正常长输出的最长静默约 105 秒，故取 300 秒作阈值，留约 3 倍余量。
+DEFAULT_SILENT_TIMEOUT = 300
+
+
+def _get_silent_timeout() -> int:
+    """读取静默超时配置，请求上下文可用时优先取 Flask 配置，否则回落环境变量"""
+    try:
+        from flask import current_app
+
+        return int(current_app.config.get("AGENT_SILENT_TIMEOUT", DEFAULT_SILENT_TIMEOUT))
+    except Exception:
+        return int(os.getenv("AGENT_SILENT_TIMEOUT", DEFAULT_SILENT_TIMEOUT))
 
 
 class AgentQueueManager:
@@ -44,8 +60,13 @@ class AgentQueueManager:
         """监听队列返回的生成式数据"""
         # 1.定义基础数据记录超时时间、开始时间、最后一次ping通时间
         listen_timeout = 600
+        # CR-16102806 / FIX-3：静默超时，与总超时并存
+        silent_timeout = _get_silent_timeout()
         start_time = time.time()
         last_ping_time = 0
+        # 最后一次收到"非 ping"事件的时间——ping 只证明连接活着，不证明模型在输出
+        last_activity_time = start_time
+        silent_triggered = False
 
         # 2.创建循环队列执行死循环读取数据，直到超时或者数据读取完毕
         while True:
@@ -54,12 +75,16 @@ class AgentQueueManager:
                 item = self.queue(task_id).get(timeout=1)
                 if item is None:
                     break
+                # CR-16102806：只有内容类事件才刷新"活动时间"，ping 不算
+                if getattr(item, "event", None) != QueueEvent.PING:
+                    last_activity_time = time.time()
                 yield item
             except queue.Empty:
                 continue
             finally:
                 # 4.计算获取数据的总耗时
                 elapsed_time = time.time() - start_time
+                idle_time = time.time() - last_activity_time
 
                 # 5.每10秒发起一个ping请求
                 if elapsed_time // 10 > last_ping_time:
@@ -70,8 +95,22 @@ class AgentQueueManager:
                     ))
                     last_ping_time = elapsed_time // 10
 
-                # 6.判断总耗时是否超时，如果超时则往队列中添加超时事件
-                if elapsed_time >= listen_timeout:
+                # 6.CR-16102806：静默超时判定（先于总超时），命中后给出可读原因
+                #   说明：guard 必须有——publish 会把 None 塞进队列，下一轮 break 时
+                #        finally 仍会执行，不 guard 会重复下发 ERROR
+                if not silent_triggered and silent_timeout > 0 and idle_time >= silent_timeout:
+                    silent_triggered = True
+                    self.publish(task_id, AgentThought(
+                        id=uuid.uuid4(),
+                        task_id=task_id,
+                        event=QueueEvent.ERROR,
+                        observation=(
+                            f"模型已连续 {silent_timeout} 秒未返回任何内容，"
+                            f"判定上游链路中断，请重试或缩短提问内容"
+                        ),
+                    ))
+                # 7.判断总耗时是否超时，如果超时则往队列中添加超时事件
+                elif elapsed_time >= listen_timeout:
                     self.publish(task_id, AgentThought(
                         id=uuid.uuid4(),
                         task_id=task_id,

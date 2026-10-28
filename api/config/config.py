@@ -61,3 +61,6 @@ class Config:
 
         # 辅助Agent应用id标识
         self.ASSISTANT_AGENT_ID = _get_env("ASSISTANT_AGENT_ID")
+
+        # CR-16102806：智能体静默超时（秒），与 600 秒总超时相互独立
+        self.AGENT_SILENT_TIMEOUT = int(_get_env("AGENT_SILENT_TIMEOUT"))

@@ -40,4 +40,8 @@ DEFAULT_CONFIG = {
 
     # 辅助Agent智能体应用id
     "ASSISTANT_AGENT_ID": "6774fcef-b594-8008-b30c-a05b8190afe6",
+
+    # CR-16102806：智能体静默超时（秒）。连续该时长无内容块即判定上游中断，
+    # 与 600 秒总超时相互独立；<=0 表示关闭该保护。
+    "AGENT_SILENT_TIMEOUT": 300,
 }

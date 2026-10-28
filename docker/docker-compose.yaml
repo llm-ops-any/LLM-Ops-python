@@ -62,6 +62,10 @@ x-llmops-common-env: &llmops-common-env
   # 辅助 Agent 智能体应用 id 标识
   ASSISTANT_AGENT_ID: "${ASSISTANT_AGENT_ID}"
 
+  # CR-16102806：智能体静默超时（秒）。连续该时长无内容块即判定上游中断，
+  # 与代码内 600 秒总超时相互独立；设为 0 可关闭（压测时调小可快速验证）
+  AGENT_SILENT_TIMEOUT: "${AGENT_SILENT_TIMEOUT:-300}"
+
   # LLM 服务提供者
   OPENAI_API_KEY: "${OPENAI_API_KEY}"
   OPENAI_API_BASE: "${OPENAI_API_BASE}"

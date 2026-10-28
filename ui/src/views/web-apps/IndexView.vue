@@ -555,6 +555,8 @@ onMounted(async () => {
                   :loading="item.id === message_id && webAppChatLoading"
                   :latency="item.latency"
                   :total_token_count="item.total_token_count"
+                  :message_id="item.id"
+                  :enable_tts="Boolean(web_app.text_to_speech?.enable)"
                   @select-suggested-question="handleSubmitQuestion"
                   message_class="max-w-[513px]"
                 />

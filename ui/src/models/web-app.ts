@@ -14,6 +14,12 @@ export type GetWebAppResponse = BaseResponse<{
       enable: boolean
     }
   }
+  /** CR-16102810：决定 WebApp 页是否显示消息朗读按钮 */
+  text_to_speech?: {
+    enable: boolean
+    voice: string
+    auto_play: boolean
+  }
 }>
 
 // 获取WebApp会话消息列表响应结构

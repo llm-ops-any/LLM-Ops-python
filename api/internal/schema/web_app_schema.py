@@ -23,10 +23,14 @@ class GetWebAppResp(Schema):
     name = fields.String(dump_default="")
     description = fields.String(dump_default="")
     app_config = fields.Dict(dump_default={})
+    # CR-16102810：WebApp 页要按这个开关决定是否显示朗读按钮
+    text_to_speech = fields.Dict(dump_default={})
 
     @pre_dump
     def process_data(self, data: App, **kwargs):
         app_config = data.app_config
+        # 说明：text_to_speech 是 JSONB，历史数据可能没有该键，统一兜成关闭
+        tts = app_config.text_to_speech or {}
         return {
             "id": data.id,
             "icon": data.icon,
@@ -36,7 +40,12 @@ class GetWebAppResp(Schema):
                 "opening_statement": app_config.opening_statement,
                 "opening_questions": app_config.opening_questions,
                 "suggested_after_answer": app_config.suggested_after_answer,
-            }
+            },
+            "text_to_speech": {
+                "enable": bool(tts.get("enable", False)),
+                "voice": tts.get("voice", ""),
+                "auto_play": bool(tts.get("auto_play", False)),
+            },
         }
 
 

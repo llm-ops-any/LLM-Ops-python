@@ -2,3 +2,6 @@
 *.sh text eol=lf
 .gitattributes text eol=lf
 **/scripts/hooks/* text eol=lf
+
+# CR-16102807：tiktoken 的 BPE 编码文件按行解析，CRLF 会让 base64 解码失败，必须原样保留
+api/docker/tiktoken_cache/* -text binary

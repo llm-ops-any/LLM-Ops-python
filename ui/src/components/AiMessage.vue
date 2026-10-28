@@ -203,7 +203,15 @@ const toggleExpand = () => {
             <icon-check />
             {{ props.latency.toFixed(2) }}s
           </div>
-          <div class="text-gray-500">{{ props.total_token_count }} Tokens</div>
+          <!-- CR-16102806 / FIX-2：流式期间 token 尚未下发，显示「统计中」而非 0 Tokens；
+               已结束但统计失败（后端会兜底置 0）时显示 —，避免被误读成"没有消耗" -->
+          <div class="text-gray-500">
+            <template v-if="props.loading">统计中</template>
+            <template v-else-if="props.total_token_count > 0">
+              {{ props.total_token_count }} Tokens
+            </template>
+            <template v-else>—</template>
+          </div>
           <a-button
             v-if="canToggle"
             type="text"

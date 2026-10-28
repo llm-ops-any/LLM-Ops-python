@@ -10,6 +10,7 @@ import {
   useStopAssistantAgentChat,
 } from '@/hooks/use-assistant-agent'
 import { useGenerateSuggestedQuestions } from '@/hooks/use-ai'
+import { useStreamIdle } from '@/hooks/use-stream-idle'
 import { useAccountStore } from '@/stores/account'
 import AssistantAgentBackground from '@/assets/images/assistant-agent-background.png'
 import { Message } from '@arco-design/web-vue'
@@ -28,6 +29,8 @@ const scrollHeight = ref(0)
 const accountStore = useAccountStore()
 const opening_questions = ['什么是成长LLMOps?', '我想创建一个应用', '能介绍下什么是RAG吗?']
 const { suggested_questions, handleGenerateSuggestedQuestions } = useGenerateSuggestedQuestions()
+// CR-16102806 / FIX-1：静默计时，超过 20 秒无内容块即提示"已等待 N 秒"
+const { idleSeconds, isIdle, startIdleWatch, touchActivity, stopIdleWatch } = useStreamIdle()
 const { loading: assistantAgentChatLoading, handleAssistantAgentChat } = useAssistantAgentChat()
 const {
   loading: stopAssistantAgentChatLoading,
@@ -105,12 +108,19 @@ const handleSubmit = async ({
   let position = 0
 
   // 5.6 调用hooks发起请求
+  // CR-16102806：启动静默计时，请求结束后（无论成败）停止
+  startIdleWatch()
   await handleAssistantAgentChat(humanQuery, attachments, (event_response) => {
     // 5.7 提取流式事件响应数据以及事件名称
     const event = event_response?.event
     const data = event_response?.data
     const event_id = data?.id
     let agent_thoughts = messages.value[0].agent_thoughts
+
+    // CR-16102806：收到内容事件即视为"还在输出"，静默计时归零（ping 不算内容）
+    if (event !== QueueEvent.ping) {
+      touchActivity()
+    }
 
     // 5.8 初始化数据检测与赋值
     if (message_id.value === '' && data?.message_id) {
@@ -181,7 +191,7 @@ const handleSubmit = async ({
 
       scroller.value.scrollToBottom()
     }
-  })
+  }).finally(() => stopIdleWatch())
 
   // 5.7 发起API请求获取建议问题列表
   if (message_id.value) {
@@ -262,8 +272,12 @@ onMounted(async () => {
         <!-- 停止调试会话 -->
         <div
           v-if="task_id && assistantAgentChatLoading"
-          class="h-[50px] flex items-center justify-center"
+          class="h-[50px] flex items-center justify-center gap-3"
         >
+          <!-- CR-16102806：静默超过 20 秒时提示"仍在生成"，避免被误判成卡死 -->
+          <span v-if="isIdle" class="text-xs text-gray-500">
+            模型正在生成，已等待 {{ idleSeconds }} 秒…
+          </span>
           <a-button
             :loading="stopAssistantAgentChatLoading"
             class="rounded-lg px-2"

@@ -6,21 +6,26 @@
 同类问题（技能副本落到项目根 `skills/`、装钩子不写 `.gitattributes`），共同点是「本机能跑、
 换台机器就静默失效，而且没有任何报错」。这类问题只能靠**主动体检**发现，靠人记住是不行的。
 
-检查 13 类（✓ 通过 / · 不适用或未建 / ⚠ 建议处理 / ✗ 有问题）：
+检查 15 类（✓ 通过 / · 不适用或未建 / ⚠ 建议处理 / ✗ 有问题）：
 
   1. 锚点          AGENTS.md 等有没有 AIDLC 标记段 —— 没有 ⇒ 技能根本不会被触发
   2. 技能副本      在 `开发文档/04技能/aidlc`（固定落点）；项目根有没有多余的 `skills/`
   3. 钩子          `core.hooksPath` 指向对不对；三个钩子在不在；首行是不是 LF
   4. .gitattributes LF 保护三行齐不齐 —— 缺了换机器 clone 后钩子静默失效
   5. 布局          五个编号目录齐不齐
-  6. 生成物        `_汇总/` 下 9 个视图在不在；`汇总.py --check` 是不是最新
-  7. 编号          CR 号有没有重复（并行时撞号的直接证据）
-  8. 基线          `需求性质：基线` 有且仅有一条 —— 否则全貌视图分不清基线和增量
-  9. 前置资源      必需资源「待提供」却已开工 ⇒ 判错
- 10. 风险          高影响风险仍「待处理」而 CR 在做 ⇒ 建议确认
- 11. 死规则        脚本解析的字段若全项目 0 使用 ⇒ 解析永远空转，报警
- 12. 孤儿 CR       CR 目录缺 状态.md/需求.md/问题.md ⇒ 汇总会**静默跳过**它
- 14. 规则文件      团队配置.md 是不是「整份复制 + 填空」：档位名、五档清单、含义表、测试三档
+  6. 规则文件      团队配置.md 是不是「整份复制 + 填空」：档位名、五档清单、含义表、测试三档
+  7. 生成物        `_汇总/` 下 9 个视图在不在；`index.html` 有没有；`汇总.py --check` 是不是最新
+  8. 编号          CR 号有没有重复（并行时撞号的直接证据）
+  9. 基线          `需求性质：基线` 有且仅有一条 —— 否则全貌视图分不清基线和增量
+ 10. 执行计划      已开工却没有 `06-执行计划.md` ⇒ 判错（老命名 CR 只建议）
+ 11. 前置资源      必需资源「待提供」却已开工 ⇒ 判错
+ 12. 风险          高影响风险仍「待处理」而 CR 在做 ⇒ 建议确认
+ 13. 死规则        脚本解析的字段若全项目 0 使用 ⇒ 解析永远空转，报警
+ 14. 孤儿 CR       CR 目录缺 00-状态.md/01-需求.md/02-问题.md ⇒ 汇总会**静默跳过**它
+ 15. 页面          `_汇总/index.html` 在不在（md 有了但没页面 = 汇总只做了一半）
+
+  文件名一律走 `_aidlc_common.find_cr_file()`：带编号（`01-需求.md`）与老裸名（`需求.md`）
+  两种都认，所以老项目不迁移也能照常体检。
 
 用法
     python 开发文档/04技能/aidlc/scripts/自检.py          # 体检
@@ -43,7 +48,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True
 
 sys.path.insert(0, HERE)
-from _aidlc_common import (GITATTR_HEAD, GITATTR_LINES,  # noqa: E402
+from _aidlc_common import (GITATTR_HEAD, GITATTR_LINES, find_cr_file,  # noqa: E402
                            gitattributes_missing)
 MARK = 'AIDLC:v2 BEGIN'
 LAYOUT = ('00规则', '01需求', '02缺陷', '03技术债', '04技能')
@@ -245,6 +250,15 @@ def check_gitattributes(rows, fix):
     hint = '跑本脚本 --fix，或 安装钩子.py（缺它则换机器 clone 后钩子静默失效）'
     txt = read(path)
 
+    # 非 git 仓库里没有 .gitattributes 谈不上「缺」—— 钩子那项已经跳过，这里跟着跳过。
+    # 2026-10-27 修：新项目刚跑完 初始化.py、还没 git init 时，这里会挂一个 ✗，
+    # 与上一行「钩子 不是 git 仓库，跳过」自相矛盾，看着像初始化失败。
+    # 文件已存在就照常检查 —— 有人习惯 git init 前先写好规则，也该被校验。
+    if txt is None and not is_repo():
+        rows.append(('d', 'gitattributes', '不是 git 仓库，跳过',
+                     'git init 后跑一次自检，或 安装钩子.py'))
+        return
+
     if txt is None:
         if not fix:
             rows.append(('x', 'gitattributes', '文件不存在', hint))
@@ -308,6 +322,13 @@ def check_generated(rows):
             x.split('/')[-1] for x in missing),
             '跑一次 汇总.py（这些是本地视图，不入库）'))
         return
+    # 页面是「汇总」的另一半：md 有了却没有 index.html ⇒ 只做了一半。
+    # 2026-10-27 opcapp：agent 连跑两遍 汇总.py 就回「汇总做了」，用户拿不到能点开的页面。
+    # 只给建议（w）不判错：不用页面、只读 md 的项目（CLI / 纯文档）也合法。
+    if not os.path.isfile(os.path.join(SUMDIR, 'index.html')):
+        rows.append(('w', '生成物', '只有 md 视图，没有 _汇总/index.html',
+                     '要给人看就 汇总.py --site（或 预览.py --no-serve）；不用页面可忽略'))
+
     sk = proj_skill()
     if not sk:
         rows.append(('d', '生成物', '没有技能副本，跳过新鲜度检查', ''))
@@ -411,12 +432,14 @@ def check_baseline(rows):
     多于一条则说明有人把增量误标成基线，全貌的「基线在前」排序会失真。
     """
     found = []
-    for kname in ('01需求', '02缺陷', '03技术债'):
-        for rq in glob.glob(os.path.join(ROOT, '开发文档', kname, 'CR-*', '需求.md')):
-            with io.open(rq, encoding='utf-8', errors='replace') as f:
-                head = f.read(1200)
-            if re.search(r'^-\s*需求性质[：:]\s*基线\s*$', head, re.M):
-                found.append(os.path.basename(os.path.dirname(rq)))
+    for d in _cr_dirs():
+        rq = find_cr_file(d, '需求')
+        if not rq:
+            continue
+        with io.open(rq, encoding='utf-8', errors='replace') as f:
+            head = f.read(1200)
+        if re.search(r'^-\s*需求性质[：:]\s*基线\s*$', head, re.M):
+            found.append(os.path.basename(d))
     if not _cr_dirs():
         rows.append(('d', '基线', '还没有 CR，跳过（首条需求的 需求.md 里写 `- 需求性质：基线`）', ''))
     elif len(found) == 1:
@@ -431,17 +454,18 @@ def check_baseline(rows):
 
 # `汇总.py` / `自检.py` 硬依赖的字段 —— 每个都该至少有一个分片在写。
 # 某字段全项目 0 使用 ⇒ 脚本在解析一个没人产出的东西，等于空转。
+# 左列是**逻辑名**（`需求` / `状态`），实际文件名由 find_cr_file 解析（带不带编号都行）。
 CONTRACT_FIELDS = (
-    ('需求.md', '变更请求'),
-    ('需求.md', '摘要'),
-    ('需求.md', '号段'),
-    ('需求.md', '需求性质'),
-    ('状态.md', '编号'),
-    ('状态.md', '名称'),
-    ('状态.md', '负责人'),
-    ('状态.md', '阶段'),
-    ('状态.md', '门禁'),
-    ('状态.md', '下一步'),
+    ('需求', '变更请求'),
+    ('需求', '摘要'),
+    ('需求', '号段'),
+    ('需求', '需求性质'),
+    ('状态', '编号'),
+    ('状态', '名称'),
+    ('状态', '负责人'),
+    ('状态', '阶段'),
+    ('状态', '门禁'),
+    ('状态', '下一步'),
 )
 
 
@@ -463,19 +487,21 @@ def check_dead_rules(rows):
         return
     by_name = {}
     for d in _cr_dirs():
-        for f in glob.glob(os.path.join(d, '*.md')):
-            by_name.setdefault(os.path.basename(f), []).append(f)
+        for name in ('需求', '状态'):
+            p = find_cr_file(d, name)
+            if p:
+                by_name.setdefault(name, []).append(p)
 
     dead = []
-    for fname, field in CONTRACT_FIELDS:
-        cands = by_name.get(fname, [])
+    for logical, field in CONTRACT_FIELDS:
+        cands = by_name.get(logical, [])
         used = 0
         for f in cands:
             with io.open(f, encoding='utf-8', errors='replace') as fh:
                 if re.search(r'^-\s*' + re.escape(field) + r'\s*[：:]', fh.read(), re.M):
                     used += 1
         if used == 0:
-            dead.append('%s 的 `%s`' % (fname, field))
+            dead.append('%s 的 `%s`' % (logical, field))
 
     if dead:
         rows.append(('w', '死规则', '%d 个字段全项目没人写：%s' % (len(dead), '、'.join(dead)),
@@ -491,16 +517,15 @@ def check_orphan_cr(rows):
     """
     orphan = []
     for d in _cr_dirs():
-        if not os.path.isfile(os.path.join(d, '状态.md')) and \
-           not os.path.isfile(os.path.join(d, '需求.md')) and \
-           not os.path.isfile(os.path.join(d, '问题.md')):
+        if not find_cr_file(d, '状态') and not find_cr_file(d, '需求') \
+                and not find_cr_file(d, '问题'):
             orphan.append(os.path.basename(d))
     if orphan:
-        rows.append(('w', '孤儿 CR', '%d 个 CR 目录缺 状态.md / 需求.md / 问题.md' % len(orphan),
-                     '汇总会跳过它们：%s ⇒ 补一个 `状态.md`（阶段可先写 not-started）'
+        rows.append(('w', '孤儿 CR', '%d 个 CR 目录缺 00-状态.md / 01-需求.md / 02-问题.md' % len(orphan),
+                     '汇总会跳过它们：%s ⇒ 补一个 `00-状态.md`（阶段可先写 not-started）'
                      % '、'.join(orphan[:3])))
     else:
-        rows.append(('v', '孤儿 CR', '每条 CR 都有 状态.md 或 需求.md/问题.md', ''))
+        rows.append(('v', '孤儿 CR', '每条 CR 都有 00-状态.md 或 01-需求.md / 02-问题.md', ''))
 
 
 def _table(text):
@@ -547,13 +572,48 @@ def _base(v):
 
 def _started(cr):
     """这条 CR 是否已经开工。not-started / cancelled 算没开工。"""
-    p = os.path.join(cr, '状态.md')
-    if not os.path.isfile(p):
+    p = find_cr_file(cr, '状态')
+    if not p:
         return False
     with io.open(p, encoding='utf-8', errors='replace') as f:
         m = re.search(r'^-\s*阶段[：:]\s*(.+)$', f.read(), re.M)
     stage = (m.group(1) if m else '').strip().lower()
     return not ('not-started' in stage or 'cancelled' in stage or not stage)
+
+
+def check_plan(rows):
+    """已开工却没有 `06-执行计划.md` ⇒ 判错（老命名 CR 给建议，不一次报一片红）。
+
+    为什么：需求定稿到写第一行代码之间，必须有一份「分几步、改哪个文件、怎么验、不做什么」。
+    没有它，agent 拿到需求就直接开写，漏改文件、顺手扩范围、验收对不上 AC 都从这里来。
+    **缺陷类也要写，只是版面小**（缺计划的表现与档位无关）。
+
+    为什么对新老项目区别对待：`06-执行计划.md` 是 2026-10-27 才引入的，
+    迁移前的老 CR 本来就没有 —— 一上来全判错，只会让人把自检当噪音关掉。
+    """
+    hard, soft, ok, idle = [], [], 0, 0
+    for d in _cr_dirs():
+        if not _started(d):
+            idle += 1
+            continue
+        if find_cr_file(d, '执行计划'):
+            ok += 1
+            continue
+        st = find_cr_file(d, '状态')
+        new_style = bool(st) and os.path.basename(st)[:1].isdigit()
+        (hard if new_style else soft).append(_crno(d))
+
+    if hard:
+        rows.append(('x', '执行计划', '%d 条已开工的 CR 缺 `06-执行计划.md`' % len(hard),
+                     '%s ⇒ 补一份（改动清单 + 步骤 + 验收映射），没有它不许进构建'
+                     % '、'.join(hard[:4])))
+    if soft:
+        rows.append(('w', '执行计划', '%d 条老命名 CR 缺 `06-执行计划.md`（迁移前的，可不补）' % len(soft),
+                     '%s ⇒ 新 CR 从需求定稿起就写；老 CR 顺手补也行' % '、'.join(soft[:4])))
+    if not hard and not soft:
+        rows.append(('v', '执行计划', '%d 条已开工 CR 都有执行计划' % ok, ''))
+    elif not hard:
+        rows.append(('d', '执行计划', '另有 %d 条未开工、%d 条已有计划' % (idle, ok), ''))
 
 
 def check_resources(rows):
@@ -564,8 +624,8 @@ def check_resources(rows):
     """
     bad, total_file = [], 0
     for d in _cr_dirs():
-        p = os.path.join(d, '前置资源.md')
-        if not os.path.isfile(p):
+        p = find_cr_file(d, '前置资源')
+        if not p:
             continue
         total_file += 1
         with io.open(p, encoding='utf-8', errors='replace') as f:
@@ -590,8 +650,8 @@ def check_risks(rows):
     """
     hot, total_file = [], 0
     for d in _cr_dirs():
-        p = os.path.join(d, '风险.md')
-        if not os.path.isfile(p):
+        p = find_cr_file(d, '风险')
+        if not p:
             continue
         total_file += 1
         if not _started(d):
@@ -670,6 +730,7 @@ def main():
     check_generated(rows)
     check_numbers(rows)
     check_baseline(rows)
+    check_plan(rows)
     check_resources(rows)
     check_risks(rows)
     check_dead_rules(rows)

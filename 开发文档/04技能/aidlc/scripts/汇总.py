@@ -20,7 +20,12 @@
 放在哪都能跑。用法：
   python <技能副本>/scripts/汇总.py            # 生成；无变化则静默
   python <技能副本>/scripts/汇总.py --verbose  # 生成并打印明细
+  python <技能副本>/scripts/汇总.py --site     # 生成 + 出页面（_汇总/index.html），不起服务
   python <技能副本>/scripts/汇总.py --check    # 只检查是否过期，过期退出码 1
+
+`--site` 为什么要单独给：用户口中的「汇总」常常指**能点开的页面**，而本脚本默认只出 md。
+转调 `预览.py --no-serve` 生成 index.html / _sidebar.md / vendor / docs 快照，全套自包含。
+钩子里不默认跑它（每次 commit 重建站点太慢）。
 
 若生成物仍被 git 跟踪，脚本会提示 `git rm --cached`（否则并行合并照样冲突）。
 
@@ -34,6 +39,12 @@ import sys
 import glob
 import subprocess
 import datetime
+
+# 技能副本是只读资源，脚本 import 同目录模块时别在里面生 __pycache__
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _aidlc_common import (design_files, find_audit_files,  # noqa: E402
+                           find_cr_file)
 
 def _find_doc_dir(start):
     """从脚本所在目录往上找含 `开发文档/` 的目录，返回 (项目根, 文档根)。
@@ -162,10 +173,11 @@ def collect():
             if not os.path.isdir(p):
                 continue
             d = os.path.basename(p)
-            st_path = os.path.join(p, '状态.md')
-            rq_path = os.path.join(p, '需求.md')
-            st = fields(st_path) if os.path.exists(st_path) else {}
-            rq = fields(rq_path, header_only=True) if os.path.exists(rq_path) else {}
+            # 文件名走共用查找：带编号（01-需求.md）与老裸名（需求.md）都认
+            st_path = find_cr_file(p, '状态')
+            rq_path = find_cr_file(p, '需求')
+            st = fields(st_path) if st_path else {}
+            rq = fields(rq_path, header_only=True) if rq_path else {}
             if not st and not rq:
                 continue
             rows.append({
@@ -184,8 +196,8 @@ def collect():
                 'seg': rq.get('号段', '—'),
                 # 需求性质：基线（第一版 / v1.0）或 增量（基线之后追加的改动）。
                 # 缺省按「增量」——基线是少数，只有它需要显式标注。
-                'nature': rq.get('需求性质', '增量') if os.path.exists(rq_path) else '—',
-                'has_req': os.path.exists(rq_path),
+                'nature': rq.get('需求性质', '增量') if rq_path else '—',
+                'has_req': bool(rq_path),
             })
     return rows
 
@@ -303,21 +315,22 @@ def render_index(rows, stamp):
         for prefix, lo, hi in parse_segments(r['seg']):
             span = '%s-%s' % (prefix, lo) if lo == hi else '%s-%s ~ %s-%s' % (prefix, lo, prefix, hi)
             out.append('| %s | %s | `%s/%s` |' % (prefix, span, KIND_DIR[r['kind']] + '/' + r['dir'],
-                                                  '需求.md' if r['has_req'] else '状态.md'))
+                                                  '01-需求.md' if r['has_req'] else '00-状态.md'))
 
     out += ['', '## 三、新增一个需求的步骤', '',
             '1. **算号**：`P + Y + MMDD + N` 共 8 位 —— 人编号 1 位（见 `00规则/团队配置.md`）、'
             '年末位 1 位、月日 2 位、当天第几个 2 位（**从 00 起**）。例 `16102100` = 人1 / 2026 / 10-21 / 当天第 00 个。',
             '2. **建目录**：`CR-<8位号>-<中文简称>/`（**目录名就是号，不需要号段文件**），例 `CR-16102100-导出CSV/`；'
-            '   里面至少放一个 `状态.md`（阶段可写 `not-started` = 占了号还没开工）。'
+            '   里面至少放一个 `00-状态.md`（阶段可写 `not-started` = 占了号还没开工）。'
             '   首位是人 ⇒ 两人永不撞；一天最多 100 个（00~99）。',
-            '3. **写 `需求.md`**，头部必须有这几个字段（索引和全貌靠它生成）：',
+            '3. **写 `01-需求.md`**，头部必须有这几个字段（索引和全貌靠它生成）：',
             '   `- 需求性质：增量`（基线写 `基线`，全项目仅一条）、`- 变更请求：CR-16102100`、'
             '`- 摘要：一句话`、`- 号段：FR-01~FR-03、AC-01~AC-02`（**CR 内编号**，'
             '跨 CR 引用写 `CR-16102100/FR-01`，不复制正文）。',
-            '4. **写 `状态.md`**，字段：`编号/名称/负责人/阶段/门禁/下一步/单元/遗留`。',
-            '5. 按需加 `设计.md` / `测试记录.md` / `验收报告.md` / `问题.md`，**不建空文件**。',
-            '6. 跑一次 `python <技能副本>/scripts/汇总.py` 刷新本索引。', '',
+            '4. **写 `00-状态.md`**，字段：`编号/名称/负责人/阶段/门禁/下一步/单元/遗留`。',
+            '5. 按需加 `06-执行计划.md` / `08-设计/08-1-应用设计.md` / `20-测试记录.md` / '
+            '`30-验收报告.md` / `02-问题.md`，**不建空文件**（编号固定，没有那份就空着号）。',
+            '6. 跑一次 `python <技能副本>/scripts/汇总.py --site` 刷新本索引和页面。', '',
             '> **唯一标识一律用 `CR-<8位号>`**（目录名就是号）。不要另造 `R7`、`CR-2` 之类的短号 —— 两套号并存，迟早对不上。', '']
     return '\n'.join(out)
 
@@ -352,32 +365,40 @@ def _sec(no, title, body, src):
 
 
 def render_design(rows, stamp):
-    """技术设计 = 各 CR 的 `设计/*.md` 按 CR 顺序拼接。真正的设计在各自 CR 目录里。"""
+    """技术设计 = 各 CR 的「执行计划 + `08-设计/*.md`」按 CR 顺序拼接。
+
+    **执行计划排在设计之前**：先看打算怎么落地（步骤、改动清单、验收映射），
+    再看设计细节（结构、规则、数据模型）。顺序反了，读者得先啃完设计才知道要干什么。
+    """
     entries = []
     for r in rows:
-        ddir = os.path.join(r['path'], '设计')
-        if not os.path.isdir(ddir):
-            continue
-        for fn in sorted(f for f in os.listdir(ddir) if f.endswith('.md')):
-            p = os.path.join(ddir, fn)
-            entries.append((r['no'], os.path.splitext(fn)[0], read(p).strip(), p))
+        plan = find_cr_file(r['path'], '执行计划')
+        if plan:
+            entries.append((r['no'], '执行计划', read(plan).strip(), plan))
+        for p in design_files(r['path']):
+            title = os.path.splitext(os.path.basename(p))[0]
+            # `08-1-应用设计` → `应用设计`：编号只负责排序，不该出现在标题里
+            m = re.match(r'^\d+(?:-\d+)?-(.+)$', title)
+            if m:
+                title = m.group(1)
+            entries.append((r['no'], title, read(p).strip(), p))
     out = ['# 技术设计（自动生成）', '',
-           '> 由 `scripts/汇总.py` 合并各 CR 的 `设计/*.md`，按 CR 号顺序，**不要手改**。',
-           '> 真正的设计在 `<类型目录>/CR-XXXX/设计/` 下 —— 每条 CR 只写自己那份，互不冲突。',
+           '> 由 `scripts/汇总.py` 合并各 CR 的 `06-执行计划.md` 与 `08-设计/*.md`，按 CR 号顺序，**不要手改**。',
+           '> 每条 CR 先计划后设计；真正的内容在 `<类型目录>/CR-XXXX/` 下 —— 各写各的，互不冲突。',
            '> 生成时间：%s ｜ 共 **%d** 节' % (stamp, len(entries)), '', '---', '']
     for no, title, body, src in entries:
         out += _sec(no, title, body, src)
     if not entries:
-        out.append('_（还没有任何 CR 写设计增量）_')
+        out.append('_（还没有任何 CR 写设计增量或执行计划）_')
     return '\n'.join(out)
 
 
 def render_ops(rows, stamp):
-    """运维说明 = 各 CR 的 `运维说明.md`（只有部署类 CR 才有）。"""
+    """运维说明 = 各 CR 的 `31-运维说明.md`（只有部署类 CR 才有）。"""
     entries = []
     for r in rows:
-        p = os.path.join(r['path'], '运维说明.md')
-        if os.path.isfile(p):
+        p = find_cr_file(r['path'], '运维说明')
+        if p:
             entries.append((r['no'], read(p).strip(), p))
     out = ['# 运维说明（自动生成）', '',
            '> 由 `scripts/汇总.py` 合并各 CR 的 `运维说明.md`，**不要手改**。',
@@ -397,11 +418,11 @@ def render_project(rows, stamp):
     """
     entries = []
     for r in rows:
-        p = os.path.join(r['path'], '变更说明.md')
-        if os.path.isfile(p):
+        p = find_cr_file(r['path'], '变更说明')
+        if p:
             entries.append((r['no'], read(p).strip(), p))
     out = ['# 项目现状（自动生成）', '',
-           '> 由 `scripts/汇总.py` 合并各 CR 的 `变更说明.md`，**不要手改**。',
+           '> 由 `scripts/汇总.py` 合并各 CR 的 `32-变更说明.md`，**不要手改**。',
            '> 项目级配置（身份 / 审批模式 / 测试策略 / 团队）见 `00规则/团队配置.md`。',
            '> 生成时间：%s ｜ 共 **%d** 条变更' % (stamp, len(entries)), '', '---', '']
     for no, body, src in entries:
@@ -418,11 +439,11 @@ def render_decisions(rows, stamp):
     """
     entries = []
     for r in rows:
-        p = os.path.join(r['path'], '决策记录.md')
-        if os.path.isfile(p):
+        p = find_cr_file(r['path'], '决策记录')
+        if p:
             entries.append((r['no'], read(p).strip(), p))
     out = ['# 决策记录（自动生成）', '',
-           '> 由 `scripts/汇总.py` 合并各 CR 的 `决策记录.md`，**不要手改**。',
+           '> 由 `scripts/汇总.py` 合并各 CR 的 `07-决策记录.md`，**不要手改**。',
            '> 这里记「为什么这么做」：选型对比、被否掉的方案、决策人和时间。',
            '> **项目复盘 / 交接时先看这份** —— 它比代码更能说明当初的边界在哪。',
            '> 生成时间：%s ｜ 共 **%d** 条 CR 有决策' % (stamp, len(entries)), '', '---', '']
@@ -466,7 +487,9 @@ def render_scope(rows, stamp):
     out += ['## 二、正文', '',
             '> 顺序：基线在前，增量按编号（≈时间）升序。每节都标了来源 CR。', '']
     for r in ordered:
-        rq = os.path.join(r['path'], '需求.md')
+        rq = find_cr_file(r['path'], '需求')
+        if not rq:
+            continue
         tag = '基线' if r['nature'] == '基线' else '增量'
         out += ['## %s · %s %s' % (tag, r['no'], r['name']), '',
                 _body_of(read(rq), levels=2), '',
@@ -537,8 +560,8 @@ def render_risks(rows, stamp):
     """
     risks, res = [], []
     for r in rows:
-        rp = os.path.join(r['path'], '风险.md')
-        if os.path.isfile(rp):
+        rp = find_cr_file(r['path'], '风险')
+        if rp:
             for it in _md_table(read(rp)):
                 if _get(it, '风险') == '—':
                     continue
@@ -549,8 +572,8 @@ def render_risks(rows, stamp):
                     'sig': _get(it, '触发信号'), 'act': _get(it, '应对'),
                     'st': _get(it, '状态'),
                 })
-        rp2 = os.path.join(r['path'], '前置资源.md')
-        if os.path.isfile(rp2):
+        rp2 = find_cr_file(r['path'], '前置资源')
+        if rp2:
             for it in _md_table(read(rp2)):
                 if _get(it, '资源') == '—':
                     continue
@@ -614,10 +637,13 @@ def render_risks(rows, stamp):
 
 def render_audit(stamp):
     entries = []
-    # 审计跟着 CR 走：`<类型目录>/CR-*/审计-<人>.md`（一人一份，追加式，天然不冲突）
+    # 审计跟着 CR 走：`CR-*/40-审计-<人>.md`（一人一份，追加式，天然不冲突）
+    # 老项目是 `审计-<人>.md`，find_audit_files 两种都收
     paths = []
     for kind in TYPES:
-        paths += sorted(glob.glob(os.path.join(DOC, KIND_DIR[kind], 'CR-*', '审计-*.md')))
+        for cr in sorted(glob.glob(os.path.join(DOC, KIND_DIR[kind], 'CR-*'))):
+            if os.path.isdir(cr):
+                paths += find_audit_files(cr)
     for path in paths:
         if os.path.basename(path) == '视图.md':
             continue
@@ -648,10 +674,57 @@ def render_audit(stamp):
     return '\n'.join(out)
 
 
+def build_site():
+    """生成 `_汇总/index.html`（自包含文档站，**不起服务**）。
+
+    为什么要有这个开关（2026-10-27，opcapp 实测）：
+    用户说「做一下汇总」，agent 跑完本脚本（只出 9 个 md）就回「汇总做了」，
+    用户拿不到能点开的页面 —— 因为页面一直是另一个脚本 `预览.py` 的事，而那段说明写着「可选」。
+    **一次指令要能出全套**，所以本脚本提供 `--site`，转调 `预览.py --no-serve`。
+
+    为什么不做成默认：
+    钩子每次 commit 都会调本脚本，默认建站要把所有 CR 文档快照复制一遍，纯属浪费；
+    站点是「要给人看」时才需要的东西，显式开关更合适。
+
+    实现上直接转调、不复制逻辑 —— 页面怎么搭只允许有一处权威（`预览.py`）。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.join(here, '预览.py')
+    if not os.path.isfile(script):
+        print('')
+        print('! 技能副本里没有 预览.py，页面没生成（副本不完整，重新同步技能副本）')
+        return 1
+    print('')
+    print('生成页面（_汇总/index.html）…')
+    sys.stdout.flush()          # 不然子进程的输出会抢在提示前面，看着像没跑
+    rc = subprocess.call([sys.executable or 'python', script, '--no-serve'], cwd=ROOT)
+    if rc == 0:
+        idx = os.path.join(SUMDIR, 'index.html')
+        rel = os.path.relpath(idx, ROOT).replace(os.sep, '/')
+        print('')
+        print('页面：%s' % rel)
+        print('  看：浏览器直接打开它，或 `cd 开发文档/_汇总 && python -m http.server 8090`')
+        print('  给：`_汇总/` 整目录打包发出去即可（自包含，不连 CDN）')
+    return rc
+
+
+def site_hint():
+    """没带 --site 时提一句页面通道 —— 不说的话，agent 和用户都以为「汇总 = 几个 md」。"""
+    idx = os.path.join(SUMDIR, 'index.html')
+    rel = os.path.relpath(idx, ROOT).replace(os.sep, '/')
+    print('')
+    if os.path.isfile(idx):
+        print('页面：%s（数据刚更新过的话，加 --site 重跑才同步）' % rel)
+    else:
+        print('页面还没生成：%s' % rel)
+        print('  要给人看（含侧边栏、可整目录打包）：本脚本加 --site，或跑 预览.py --no-serve')
+
+
 def main():
     argv = sys.argv[1:]
     verbose = '--verbose' in argv or '-v' in argv
     check_only = '--check' in argv
+    site = '--site' in argv or '--html' in argv
 
     if not os.path.isdir(DOC):
         print('找不到 %s' % DOC)
@@ -703,14 +776,12 @@ def main():
         print('生成物是最新的。')
         return 0
 
-    if not changed:
-        if verbose:
-            print('全部最新，无需改动。')
-        return 0
-
-    print('已在本地生成 %d 个视图（**不入库**，别提交）：' % len(changed))
-    for p in changed:
-        print('  %s' % os.path.relpath(p, ROOT))
+    if changed:
+        print('已在本地生成 %d 个视图（**不入库**，别提交）：' % len(changed))
+        for p in changed:
+            print('  %s' % os.path.relpath(p, ROOT))
+    elif verbose:
+        print('视图全部最新，无需改动。')
 
     stuck = tracked_generated()
     if stuck:
@@ -720,6 +791,11 @@ def main():
             print('  %s' % p)
         print('  一次性移除：git rm --cached --%s' % ''.join(' "%s"' % p for p in stuck))
         print('  再跑一次 安装钩子.py，会把它们补进 .gitignore')
+
+    # md 只是数据；用户要的「汇总」通常还包括能点开的页面。--site 一次出全套。
+    if site:
+        return build_site()
+    site_hint()
     return 0
 
 

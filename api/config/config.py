@@ -64,3 +64,7 @@ class Config:
 
         # CR-16102806：智能体静默超时（秒），与 600 秒总超时相互独立
         self.AGENT_SILENT_TIMEOUT = int(_get_env("AGENT_SILENT_TIMEOUT"))
+
+        # CR-16102807：微信公众号接入展示（回调地址前缀 / 服务器 IP）
+        self.SERVICE_IP = _get_env("SERVICE_IP")
+        self.SERVICE_API_PREFIX = _get_env("SERVICE_API_PREFIX")

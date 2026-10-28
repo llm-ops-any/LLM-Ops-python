@@ -66,6 +66,10 @@ x-llmops-common-env: &llmops-common-env
   # 与代码内 600 秒总超时相互独立；设为 0 可关闭（压测时调小可快速验证）
   AGENT_SILENT_TIMEOUT: "${AGENT_SILENT_TIMEOUT:-300}"
 
+  # CR-16102807：微信公众号接入（回调前缀需对外可访问，否则微信无法回调）
+  SERVICE_IP: "${SERVICE_IP:-}"
+  SERVICE_API_PREFIX: "${SERVICE_API_PREFIX:-http://localhost/api}"
+
   # LLM 服务提供者
   OPENAI_API_KEY: "${OPENAI_API_KEY}"
   OPENAI_API_BASE: "${OPENAI_API_BASE}"

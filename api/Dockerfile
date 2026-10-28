@@ -23,6 +23,10 @@ ENV NLTK_DATA=/app/api/internal/core/unstructured/nltk_data
 # CR-16102805：与课程原项目对齐，容器内拉 HuggingFace 走国内镜像站（默认走 huggingface.co 会超时）
 ENV HF_ENDPOINT=https://hf-mirror.com
 
+# CR-16102807：tiktoken 首次 get_encoding 会联网下载 BPE 文件（~1.6MB），国内网络下常卡数十秒到数分钟，
+# 且默认缓存在 /tmp，容器重启即失效。这里把 cl100k_base 编码文件随镜像预置，运行时零联网。
+ENV TIKTOKEN_CACHE_DIR=/app/api/docker/tiktoken_cache
+
 # 设置容器时区为中国标准时间，避免时区错误
 ENV TZ Asia/Shanghai
 

@@ -33,6 +33,8 @@ from internal.handler import (
     ConversationHandler,
     ModelProviderHandler,
     AudioHandler,
+    PlatformHandler,
+    WechatHandler,
 )
 
 
@@ -62,6 +64,8 @@ class Router:
     conversation_handler: ConversationHandler
     model_provider_handler: ModelProviderHandler
     audio_handler: AudioHandler
+    platform_handler: PlatformHandler
+    wechat_handler: WechatHandler
 
     def register_router(self, app: Flask):
         """注册路由"""
@@ -509,6 +513,24 @@ class Router:
             view_func=self.audio_handler.message_to_audio,
         )
 
-        # 19.在应用上注册蓝图
+        # 19.微信公众号发布模块（CR-16102807）
+        # 说明：/platform/* 是登录态下的配置读写；/wechat/* 由微信服务器回调，
+        #      不能加 login_required（微信不带本项目登录态）
+        bp.add_url_rule(
+            "/platform/<uuid:app_id>/wechat-config",
+            view_func=self.platform_handler.get_wechat_config,
+        )
+        bp.add_url_rule(
+            "/platform/<uuid:app_id>/wechat-config",
+            methods=["POST"],
+            view_func=self.platform_handler.update_wechat_config,
+        )
+        bp.add_url_rule(
+            "/wechat/<uuid:app_id>",
+            methods=["GET", "POST"],
+            view_func=self.wechat_handler.wechat,
+        )
+
+        # 20.在应用上注册蓝图
         app.register_blueprint(bp)
         app.register_blueprint(openapi_bp)

@@ -64,3 +64,7 @@ python-pptx
 
 # 服务器部署
 gunicorn
+
+# 微信公众号（CR-16102807）：协议解析（check_signature / parse_message / TextReply）
+# optionaldict 由其传递引入，不单独声明
+wechatpy

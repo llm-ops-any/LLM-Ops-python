@@ -44,4 +44,9 @@ DEFAULT_CONFIG = {
     # CR-16102806：智能体静默超时（秒）。连续该时长无内容块即判定上游中断，
     # 与 600 秒总超时相互独立；<=0 表示关闭该保护。
     "AGENT_SILENT_TIMEOUT": 300,
+
+    # CR-16102807：微信公众号接入展示用（不参与校验，仅下发给前端）
+    # SERVICE_API_PREFIX 用于拼回调地址 {prefix}/wechat/{app_id}
+    "SERVICE_IP": "",
+    "SERVICE_API_PREFIX": "http://localhost/api",
 }

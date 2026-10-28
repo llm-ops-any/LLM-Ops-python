@@ -21,10 +21,12 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 
 from internal.entity.app_entity import AppConfigType, DEFAULT_APP_CONFIG, AppStatus
+from internal.entity.platform_entity import WechatConfigStatus
 from internal.entity.conversation_entity import InvokeFrom
 from internal.extension.database_extension import db
 from internal.lib.helper import generate_random_string
 from .conversation import Conversation
+from .platform import WechatConfig
 
 
 class App(db.Model):
@@ -130,6 +132,47 @@ class App(db.Model):
             db.session.commit()
 
         return self.token
+
+    @property
+    def wechat_config(self) -> "WechatConfig":
+        """获取应用的微信发布配置信息（CR-16102807）
+
+        说明：这里做三件事，调用方无需自己维护状态——
+        1. 配置行不存在时自动补建（status=unconfigured）
+        2. 三项凭证任一为空却标为 configured 时，纠正回 unconfigured
+        3. 与应用发布状态对齐：草稿强制 unconfigured；已发布且三项齐全则置 configured
+        """
+        # 1.获取当前应用的微信配置信息
+        config = db.session.query(WechatConfig).filter(
+            WechatConfig.app_id == self.id,
+        ).one_or_none()
+
+        # 2.检测配置是否存在，不存在则创建
+        if not config:
+            config = WechatConfig(app_id=self.id, status=WechatConfigStatus.UNCONFIGURED)
+            db.session.add(config)
+            db.session.commit()
+
+        # 3.三项凭证只要有一个没填，就不能算已配置
+        if config.status == WechatConfigStatus.CONFIGURED:
+            if not config.wechat_app_id or not config.wechat_app_secret or not config.wechat_token:
+                config.status = WechatConfigStatus.UNCONFIGURED
+                db.session.commit()
+
+        # 4.检测应用发布状态与配置信息是否匹配，不匹配则更新
+        if self.status == AppStatus.DRAFT:
+            # 5.草稿不允许对外服务，强制未配置
+            if config.status == WechatConfigStatus.CONFIGURED:
+                config.status = WechatConfigStatus.UNCONFIGURED
+                db.session.commit()
+        elif self.status == AppStatus.PUBLISHED:
+            # 6.已发布且三项齐全，则置为已配置
+            if config.status == WechatConfigStatus.UNCONFIGURED:
+                if config.wechat_app_id and config.wechat_app_secret and config.wechat_token:
+                    config.status = WechatConfigStatus.CONFIGURED
+                    db.session.commit()
+
+        return config
 
 
 class AppConfig(db.Model):

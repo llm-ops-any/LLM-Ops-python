@@ -7,7 +7,7 @@ __pycache__
 *.py[cod]
 *$py.class
 
-# API相关
+# API服务相关
 api/storage/log/
 api/storage/memory/
 api/tmp/
@@ -19,10 +19,14 @@ api/.env
 ui/node_modules/
 ui/dist/
 
-# Docker容器相关
+# Docker容器服务相关
 docker/volumes/
 docker/.env
 .venv
 开发文档/_汇总/
 __pycache__/
 *.pyc
+
+
+# echoMimic 数字人py服务相关
+echoMimic/.env

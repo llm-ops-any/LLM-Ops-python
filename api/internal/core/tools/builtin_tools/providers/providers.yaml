@@ -47,3 +47,10 @@
   background: "#E5F1FB"
   category: search
   created_at: 1792300000
+- name: pptx
+  label: PPT工具包
+  description: 这是一个PPT处理工具包，可以将特定内容生成PPT文档。
+  icon: icon.png
+  background: "#FFFFFF"
+  category: tool
+  created_at: 1722498386

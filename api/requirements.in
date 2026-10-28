@@ -57,5 +57,10 @@ requests
 wikipedia
 duckduckgo-search
 
+# PPT 生成工具（CR-16102804）：mistune 负责 markdown->slide 渲染，python-pptx 负责落文件
+# pillow / xlsxwriter 由 python-pptx 传递引入，不单独声明
+mistune
+python-pptx
+
 # 服务器部署
 gunicorn

@@ -282,6 +282,9 @@ marshmallow==3.26.0
     #   dataclasses-json
 mdurl==0.1.2
     # via markdown-it-py
+mistune==3.1.2
+    # via -r requirements.in
+
 msgpack==1.1.0
     # via langgraph-checkpoint
 multidict==6.1.0
@@ -327,6 +330,9 @@ packaging==24.2
     #   transformers
 pandas==2.2.3
     # via -r requirements.in
+pillow==11.1.0
+    # via python-pptx
+
 portalocker==3.1.1
     # via concurrent-log-handler
 primp==0.10.1
@@ -387,6 +393,9 @@ python-magic==0.4.27
     # via unstructured
 python-oxmsg==0.0.1
     # via unstructured
+python-pptx==1.0.2
+    # via -r requirements.in
+
 pytz==2024.2
     # via pandas
 pywin32==308 ; platform_system == "Windows"
@@ -540,6 +549,9 @@ wrapt==1.17.2
     # via unstructured
 wtforms==3.2.1
     # via flask-wtf
+xlsxwriter==3.2.2
+    # via python-pptx
+
 xmltodict==0.14.2
     # via cos-python-sdk-v5
 yarl==1.18.3

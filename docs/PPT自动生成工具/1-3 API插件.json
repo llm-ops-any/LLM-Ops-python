@@ -1,0 +1,49 @@
+{
+    "description": "Web网页信息搜索API",
+    "server": "https://api.bochaai.com/v1",
+    "paths": {
+        "/web-search": {
+            "post": {
+                "description": "当需要搜索互联网上的内容时，可以使用该工具",
+                "operationId": "WebSearchAPI",
+                "parameters": [
+                    {
+                        "name": "query",
+                        "in": "request_body",
+                        "description": "用户的搜索词。",
+                        "required": true,
+                        "type": "str"
+                    },
+                    {
+                        "name": "freshness",
+                        "in": "request_body",
+                        "description": "搜索指定时间范围内的网页。可选值: oneDay/oneWeek/oneMonth/oneYear/noLimit，分别代表一天内/一周内/一个月内/一年内/不限制(默认)",
+                        "required": false,
+                        "type": "str"
+                    },
+                    {
+                        "name": "summary",
+                        "in": "request_body",
+                        "description": "是否显示文本摘要。",
+                        "required": false,
+                        "type": "bool"
+                    },
+                    {
+                        "name": "count",
+                        "in": "request_body",
+                        "description": "返回结果的条数（实际返回结果数量可能会小于count指定的数量）。范围为1-50，默认为10",
+                        "required": false,
+                        "type": "int"
+                    },
+                    {
+                        "name": "page",
+                        "in": "request_body",
+                        "description": "页码，默认值为 1",
+                        "required": false,
+                        "type": "int"
+                    }
+                ]
+            }
+        }
+    }
+}

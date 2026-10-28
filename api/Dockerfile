@@ -20,6 +20,9 @@ ENV FLASK_ENV=production
 ENV FLASK_DEBUG=0
 ENV NLTK_DATA=/app/api/internal/core/unstructured/nltk_data
 
+# CR-16102805：与课程原项目对齐，容器内拉 HuggingFace 走国内镜像站（默认走 huggingface.co 会超时）
+ENV HF_ENDPOINT=https://hf-mirror.com
+
 # 设置容器时区为中国标准时间，避免时区错误
 ENV TZ Asia/Shanghai
 

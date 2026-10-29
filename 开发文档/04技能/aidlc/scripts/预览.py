@@ -119,7 +119,7 @@ HOWTO = """这份目录是 AIDLC 生成的文档站，内容自包含，可以�
 
 
 def find_doc_dir(start):
-    """从脚本所在目录往上找含 `开发文档/` 的目录，返回 (项目根, 文档根)。
+    """从 start 往上找含 `开发文档/` 的目录，返回 (项目根, 文档根)；找不到返回 None。
 
     为什么不 import 汇总.py：那是可直接执行的脚本，import 会把整个汇总跑一遍。
     八行代码，重复比耦合安全。
@@ -131,11 +131,24 @@ def find_doc_dir(start):
             return d, cand
         parent = os.path.dirname(d)
         if parent == d:
-            raise SystemExit('找不到含 `开发文档/` 的项目根（从 %s 往上）' % start)
+            return None
         d = parent
 
 
-ROOT, DOC = find_doc_dir(HERE)
+def resolve_dirs():
+    """优先按**当前目录**定位项目，找不到才退回脚本位置 —— 与 `汇总.py` 同一套规则。
+
+    只按脚本位置反推会错位：`汇总.py --site` 会转调本脚本，用宿主技能给别的项目建站时，
+    站点会生成到宿主上溯到的那个项目（2026-10-29 与 汇总.py 的同款问题一起修）。
+    """
+    for start in (os.getcwd(), HERE):
+        got = find_doc_dir(start)
+        if got:
+            return got
+    raise SystemExit('找不到含 `开发文档/` 的项目根（当前目录和脚本位置往上都没有）')
+
+
+ROOT, DOC = resolve_dirs()
 SUMDIR = os.path.join(DOC, SUM_NAME)
 VENDOR = os.path.join(SUMDIR, 'vendor')
 DOCS = os.path.join(SUMDIR, 'docs')
@@ -267,8 +280,12 @@ def _docs_of(cr_path):
 
 
 def build_sidebar():
-    """侧边栏：9 个汇总视图 + 三类 CR 的文档树（全部相对路径）。"""
-    out = ['- **汇总视图**']
+    """侧边栏：看板入口 + 9 个汇总视图 + 三类 CR 的文档树（全部相对路径）。"""
+    out = []
+    # 看板（汇总.py 生成）放在最上面：它是唯一能按人 / 时间筛的页面
+    if os.path.isfile(os.path.join(SUMDIR, '看板.html')):
+        out += ['- [**CR 看板**（按人 / 时间筛选）](看板.html \':target=_blank\')', '']
+    out += ['- **汇总视图**']
     views = [f for f in os.listdir(SUMDIR) if f.endswith('.md') and f != '_sidebar.md']
     priority = ['状态.md', '需求索引.md', '当前需求全貌.md', '风险与资源.md',
                 '技术设计.md', '决策记录.md', '项目现状.md', '运维说明.md', '审计视图.md']

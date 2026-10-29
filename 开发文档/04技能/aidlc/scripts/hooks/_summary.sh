@@ -54,6 +54,11 @@ AIDLC_SUMMARY=1 "$PY" "$SUM" \
 CONF="$ROOT/开发文档/00规则/团队配置.md"
 if [ -f "$CONF" ]; then
   BUILD_CMD="$(sed -n 's/^- 构建命令[：:][[:space:]]*//p' "$CONF" | head -1)"
+  # 与 自检.py 的口径对齐：括号说明、「留空 / 不 / 无 / 未」开头都算「没声明」。
+  # 只判非空的话，写「（留空）」会被当成命令去跑，每次合并都报一条假失败（2026-10-29 踩到）。
+  case "$BUILD_CMD" in
+    （*|留空*|不*|无*|未*) BUILD_CMD="" ;;
+  esac
   if [ -n "$BUILD_CMD" ]; then
     ( cd "$ROOT" && sh -c "$BUILD_CMD" ) >/dev/null 2>&1 \
       || echo "[aidlc] 构建命令失败（已忽略，不阻塞 git）：$BUILD_CMD"

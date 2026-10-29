@@ -17,8 +17,8 @@
 
 做的事（幂等，已存在的一律跳过，绝不覆盖用户内容）
     1. 建 开发文档/{00规则,01需求,02缺陷,03技术债,04技能,_汇总}
-    2. 00规则/ 四份规则文件 ← 技能模板（项目概述 / 团队配置 / 开发规范 / 文档结构）
-    3. 开发文档/状态.md 骨架
+    2. 00规则/ 五份规则文件 ← 技能模板（项目概述 / 团队配置 / 开发规范 / 文档结构 / 协作规范）
+    3. 开发文档/状态.md 快照（可选；每条 CR 的真实状态在 CR-*/00-状态.md）
     4. 技能副本 → 开发文档/04技能/aidlc（项目自包含，换机器/换 agent 都能跑）
     5. 入口锚点（--entry 决定写哪个，见下）
     6. git 钩子（clean merge / 冲突解决后提交 / rebase 收尾自动重建视图）
@@ -428,7 +428,9 @@ def main():
     anchor = os.path.join(HERE, 'install-project-anchors.py')
     cmd = [sys.executable, anchor, root]
     if args.entry == 'none':
-        cmd.append('--skill-only')
+        # --no-skill 必须压过 --skill-only，否则这个参数组合等于没写（2026-10-29 自测踩到）
+        if not args.no_skill:
+            cmd.append('--skill-only')
     else:
         cmd += ['--platforms', 'auto' if args.entry == 'auto' else args.entry]
         if args.full_entry:

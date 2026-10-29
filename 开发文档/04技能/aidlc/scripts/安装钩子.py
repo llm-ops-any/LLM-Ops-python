@@ -205,7 +205,7 @@ def main():
             print('    %s' % p)
         print('  一次性移除：git rm --cached --%s' % ''.join(' "%s"' % p for p in stuck))
     print('生效时机：clean merge（post-merge）｜ 冲突解决后提交（post-commit，父提交数=2）｜ rebase 收尾（post-rewrite）')
-    print('动作：跑 %s 在本地重建 开发文档/_汇总/ 下的 8 个视图（视图不入库，不 git add）' % REL_SUM)
+    print('动作：跑 %s 在本地重建 开发文档/_汇总/ 下的 9 个视图（视图不入库，不 git add）' % REL_SUM)
     print('      若 00规则/团队配置.md 里声明了「构建命令」，再执行它')
     print('任何失败都不会阻塞 git（顶多视图过期）。')
     print('\n提示：core.hooksPath 是本仓库的本地配置，换机器 / 重新克隆要再跑一次。')

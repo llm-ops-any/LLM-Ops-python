@@ -1,9 +1,23 @@
 # Question Format Guide
 
+> ⚠️ **中文版已改写：本文件只保留「题目怎么设计」，不保留「问题写进文件」这套流程**
+>
+> 本技能（`SKILL.md` **规则 A**）要求：**问题在对话里直接问，用户只需回答**，不要求他打开、编辑、保存任何文件。
+> 原版要求「把所有问题写进 `{phase}-questions.md`、等用户在 `[Answer]:` 后面填」—— 这条**作废**，
+> 因为那是把负担转移给用户，也是 AIDLC 在中文团队里最容易让人放弃的一步。
+>
+> **仍然有效的部分**（照用）：
+> - 一次只问**一组**相关问题，不要一口气抛十个；
+> - 每题给 **A/B/C/D 四个具体选项**，最后加「E）其他（自己说）」；
+> - 选项要**互斥**、写清代价，不要出「好 / 一般 / 差」这种没法执行的题；
+> - 用户的回答要原样回写进审计文件（见规则 C）。
+>
+> **作废的部分**：文件命名、`[Answer]:` 标记、把问题写进文件的时机。
+
 ## MANDATORY: All Questions Must Use This Format
 
 ### Rule: Never Ask Questions in Chat
-**CRITICAL**: You must NEVER ask questions directly in the chat. ALL questions must be placed in dedicated question files.
+**CRITICAL**: You must NEVER ask questions directly in the chat. ALL questions must be placed in dedicated question files. ← 【**中文版已作废**：问题在对话里问，用户不必改文件。见上方说明与 SKILL.md 规则 A】
 
 ### Question File Format
 

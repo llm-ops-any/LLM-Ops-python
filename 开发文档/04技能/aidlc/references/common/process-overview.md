@@ -2,6 +2,20 @@
 
 **Purpose**: Technical reference for AI model and developers to understand complete workflow structure.
 
+> ⚠️ **中文版已改写 —— 读之前先看这三条**
+>
+> 本文件是 awslabs/aidlc-workflows 1.x 的**英文原文**，保留作对照基准。下列两条在本技能里**已作废**，
+> 一律以 `SKILL.md` 为准：
+>
+> 1. **`Answer questions in dedicated question files`**（见下方「Your Team's Role」一节）→ 中文版是**规则 A**：
+>    问题在**对话里**问，用户只需回答，**不要求他去改任何文件**。把「写问题文件 → 等用户改文件 → 再读回」
+>    这套负担转移出去，是本技能明确禁止的。
+> 2. **`No fixed sequences`**（见下方「The Adaptive Workflow」一节）→ 中文版是**门禁序列**：阶段可以按需裁剪、顺序可以调整，
+>    但**门禁必停** —— 每个 G 点必须人工明确批准才能往下走，不许用「看起来没问题」跳过。
+>
+> 其余内容（阶段清单、深度分级、错误处理、术语）仍然有效，可以直接用。
+> 本文件是**每次启动必读的三份之一**，所以这三条写在最前面，避免先读进作废的做法。
+
 **Note**: Similar content exists in welcome-message.md (user welcome message) and README.md (documentation). This duplication is INTENTIONAL - each file serves a different purpose:
 - **This file**: Detailed technical reference with Mermaid diagram for AI model context loading
 - **welcome-message.md**: User-facing welcome message with ASCII diagram
@@ -19,10 +33,10 @@
 • **AI analyzes** your request, workspace, and complexity to determine which stages are needed
 • **These stages always execute**: Workspace Detection, Requirements Analysis (adaptive depth), Workflow Planning, Code Generation (per-unit), Build and Test
 • **All other stages are conditional**: Reverse Engineering, User Stories, Application Design, Units Generation, per-unit design stages (Functional Design, NFR Requirements, NFR Design, Infrastructure Design)
-• **No fixed sequences**: Stages execute in the order that makes sense for your specific task
+• **No fixed sequences**: Stages execute in the order that makes sense for your specific task  ← 【中文版已作废：顺序可调，但**门禁必停**，见 SKILL.md §3】
 
 ## Your Team's Role:
-• **Answer questions** in dedicated question files using [Answer]: tags with letter choices (A, B, C, D, E)
+• **Answer questions** in dedicated question files using [Answer]: tags with letter choices (A, B, C, D, E)  ← 【中文版已作废：问题在**对话里**问，用户不必改文件，见 SKILL.md 规则 A】
 • **Option E available**: Choose "Other" and describe your custom response if provided options don't match
 • **Work as a team** to review and approve each phase before proceeding
 • **Collectively decide** on architectural approach when needed

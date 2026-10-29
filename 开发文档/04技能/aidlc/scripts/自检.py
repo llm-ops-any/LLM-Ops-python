@@ -6,7 +6,7 @@
 同类问题（技能副本落到项目根 `skills/`、装钩子不写 `.gitattributes`），共同点是「本机能跑、
 换台机器就静默失效，而且没有任何报错」。这类问题只能靠**主动体检**发现，靠人记住是不行的。
 
-检查 15 类（✓ 通过 / · 不适用或未建 / ⚠ 建议处理 / ✗ 有问题）：
+检查 16 类（✓ 通过 / · 不适用或未建 / ⚠ 建议处理 / ✗ 有问题）：
 
   1. 锚点          AGENTS.md 等有没有 AIDLC 标记段 —— 没有 ⇒ 技能根本不会被触发
   2. 技能副本      在 `开发文档/04技能/aidlc`（固定落点）；项目根有没有多余的 `skills/`
@@ -23,6 +23,7 @@
  13. 死规则        脚本解析的字段若全项目 0 使用 ⇒ 解析永远空转，报警
  14. 孤儿 CR       CR 目录缺 00-状态.md/01-需求.md/02-问题.md ⇒ 汇总会**静默跳过**它
  15. 页面          `_汇总/index.html` 在不在（md 有了但没页面 = 汇总只做了一半）
+ 16. CR 时间       `状态.md` 的 `创建` / `更新` 齐不齐、是不是 `YYYY-MM-DD HH:MM:SS`
 
   文件名一律走 `_aidlc_common.find_cr_file()`：带编号（`01-需求.md`）与老裸名（`需求.md`）
   两种都认，所以老项目不迁移也能照常体检。
@@ -463,6 +464,8 @@ CONTRACT_FIELDS = (
     ('状态', '编号'),
     ('状态', '名称'),
     ('状态', '负责人'),
+    ('状态', '创建'),
+    ('状态', '更新'),
     ('状态', '阶段'),
     ('状态', '门禁'),
     ('状态', '下一步'),
@@ -508,6 +511,45 @@ def check_dead_rules(rows):
                      '脚本在解析它们 ⇒ 解析结果永远是空。要么补写，要么把这条规则删掉'))
     else:
         rows.append(('v', '死规则', '契约字段都在用（%d 项）' % len(CONTRACT_FIELDS), ''))
+
+
+CR_TS_RE = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$')
+
+
+def check_cr_times(rows):
+    """每条 CR 的 `状态.md` 都要有 `创建` / `更新`，且是 `YYYY-MM-DD HH:MM:SS`。
+
+    为什么要它：这两个时间以前谁都没写，想知道「这条 CR 多久没动」只能翻 git，
+    而 git 时间会被批量重构污染 —— 试点2 实测有 3 个 CR 目录的首提交都是同一次重构的
+    16:57:04，把重构时刻当成了 CR 创建时刻。
+    """
+    dirs = _cr_dirs()
+    if not dirs:
+        rows.append(('d', 'CR 时间', '还没有 CR，跳过', ''))
+        return
+    bad = []
+    for d in dirs:
+        p = find_cr_file(d, '状态')
+        if not p:
+            continue
+        text = read(p)
+        vals = {}
+        for m in re.finditer(r'^-\s*(创建|更新)\s*[：:]\s*(.*)$', text, re.M):
+            vals.setdefault(m.group(1), m.group(2).strip())
+        name = os.path.basename(d)
+        miss = [k for k in ('创建', '更新') if not vals.get(k)]
+        if miss:
+            bad.append('%s 缺 %s' % (name, '/'.join(miss)))
+        for k in ('创建', '更新'):
+            v = vals.get(k)
+            if v and not CR_TS_RE.match(v):
+                bad.append('%s 的 %s 写成「%s」' % (name, k, v))
+    if bad:
+        rows.append(('w', 'CR 时间', '%d 处时间缺失或格式不对' % len(bad),
+                     '；'.join(bad[:6]) + (' 等' if len(bad) > 6 else '')
+                     + ' —— 统一写 `- 创建：YYYY-MM-DD HH:MM:SS`（年月日 时分秒）'))
+    else:
+        rows.append(('v', 'CR 时间', '%d 条 CR 的创建/更新时间齐全（年月日 时分秒）' % len(dirs), ''))
 
 
 def check_orphan_cr(rows):
@@ -734,6 +776,7 @@ def main():
     check_resources(rows)
     check_risks(rows)
     check_dead_rules(rows)
+    check_cr_times(rows)
     check_orphan_cr(rows)
 
     print('AIDLC 自检  %s' % ROOT)

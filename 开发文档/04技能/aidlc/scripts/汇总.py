@@ -137,6 +137,25 @@ def fields(path, header_only=False):
     return out
 
 
+TIME_IN_RE = re.compile(r'^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?\s*(?:[+-]\d{2}:?\d{2}|Z)?$')
+
+
+def fmt_time(v):
+    """把 `创建` / `更新` 规整成 `YYYY-MM-DD HH:MM:SS`（年月日 + 时分秒）。
+
+    认 `T` 分隔、带时区、缺秒三种写法；**只写日期或认不出就原样返回** ——
+    宁可显示得难看，也不替人补一个假的 `00:00:00`。格式不合规由 `自检.py` 报出来。
+    """
+    v = (v or '').strip()
+    if not v or v == '—':
+        return '—'
+    m = TIME_IN_RE.match(v)
+    if not m:
+        return v
+    d, hh, mm, ss = m.group(1), m.group(2), m.group(3), m.group(4) or '00'
+    return '%s %s:%s:%s' % (d, hh, mm, ss)
+
+
 def sort_key(dirname):
     """CR-00, CR-01…, D-01 —— 基线在前，缺陷在后。"""
     m = re.match(r'CR-(\d+)', dirname)
@@ -187,6 +206,8 @@ def collect():
                 'no': st.get('编号') or rq.get('变更请求') or d.split('-')[0],
                 'name': st.get('名称') or d.split('-', 2)[-1],
                 'owner': st.get('负责人', '—'),
+                'created': fmt_time(st.get('创建')),
+                'updated': fmt_time(st.get('更新')),
                 'stage': st.get('阶段', '—'),
                 'gate': st.get('门禁', '—'),
                 'next': st.get('下一步', '—'),
@@ -227,11 +248,12 @@ def render_status(rows, stamp):
         if not group:
             continue
         out += ['### %s（%d）' % (kind, len(group)), '',
-                '| 编号 | 名称 | 负责人 | 阶段 | 下一步 |',
-                '|---|---|---|---|---|']
+                '| 编号 | 名称 | 负责人 | 创建 | 更新 | 阶段 | 下一步 |',
+                '|---|---|---|---|---|---|---|']
         for r in group:
             stage = STAGE_LABEL.get(r['stage'], r['stage'])
-            out.append('| **%s** | %s | %s | %s | %s |' % (r['no'], r['name'], r['owner'], stage, r['next']))
+            out.append('| **%s** | %s | %s | %s | %s | %s | %s |' % (
+                r['no'], r['name'], r['owner'], r['created'], r['updated'], stage, r['next']))
         out.append('')
     out += ['', '## 汇总', '',
             '- 共 **%d** 条线（%s）：%s' % (len(rows),
@@ -299,13 +321,13 @@ def render_index(rows, stamp):
         if not group:
             continue
         out += ['### %s（%d）' % (kind, len(group)), '',
-                '| 目录 | 编号 | 性质 | 摘要 | 号段 | 阶段 |',
-                '|---|---|---|---|---|---|']
+                '| 目录 | 编号 | 性质 | 摘要 | 号段 | 阶段 | 创建 | 更新 |',
+                '|---|---|---|---|---|---|---|---|']
         for r in group:
             nature = '**基线**' if r['nature'] == '基线' else r['nature']
-            out.append('| `%s/%s/` | **%s** | %s | %s | %s | %s |' % (
+            out.append('| `%s/%s/` | **%s** | %s | %s | %s | %s | %s | %s |' % (
                 KIND_DIR[kind], r['dir'], r['no'], nature, r['summary'], r['seg'],
-                STAGE_LABEL.get(r['stage'], r['stage'])))
+                STAGE_LABEL.get(r['stage'], r['stage']), r['created'], r['updated']))
         out.append('')
 
     out += ['', '## 二、ID 号段 → 文件', '',
@@ -327,7 +349,8 @@ def render_index(rows, stamp):
             '   `- 需求性质：增量`（基线写 `基线`，全项目仅一条）、`- 变更请求：CR-16102100`、'
             '`- 摘要：一句话`、`- 号段：FR-01~FR-03、AC-01~AC-02`（**CR 内编号**，'
             '跨 CR 引用写 `CR-16102100/FR-01`，不复制正文）。',
-            '4. **写 `00-状态.md`**，字段：`编号/名称/负责人/阶段/门禁/下一步/单元/遗留`。',
+            '4. **写 `00-状态.md`**，字段：`编号/名称/负责人/创建/更新/阶段/门禁/下一步/单元/遗留`。'
+            '`创建` 在占号时写一次；`更新` **每改一次状态就刷一次**；两条都写 `YYYY-MM-DD HH:MM:SS`（年月日 时分秒，24 小时制）。',
             '5. 按需加 `06-执行计划.md` / `08-设计/08-1-应用设计.md` / `20-测试记录.md` / '
             '`30-验收报告.md` / `02-问题.md`，**不建空文件**（编号固定，没有那份就空着号）。',
             '6. 跑一次 `python <技能副本>/scripts/汇总.py --site` 刷新本索引和页面。', '',

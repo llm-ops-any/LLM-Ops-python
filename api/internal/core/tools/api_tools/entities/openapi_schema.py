@@ -95,10 +95,21 @@ class OpenAPISchema(BaseModel):
             operation_ids.append(interface["operation"]["operationId"])
 
             # 7.校验parameters参数格式是否正确
+            parameter_names = []
             for parameter in interface["operation"].get("parameters", []):
                 # 8.校验name/in/description/required/type参数是否存在，并且类型正确
                 if not isinstance(parameter.get("name"), str):
                     raise ValidateErrorException("parameter.name参数必须为字符串且不为空")
+
+                # 8.1 同一接口内的参数名必须唯一，否则按name建字典时会静默覆盖，
+                # 例如把两个含义不同的参数都叫count，后面的会吃掉前面的
+                if parameter.get("name") in parameter_names:
+                    raise ValidateErrorException(
+                        f"parameter.name必须唯一，{parameter.get('name')}在"
+                        f"{interface['operation']['operationId']}中出现了重复，"
+                        f"请为含义不同的参数取不同的名字(例如条数用count、页码用page)"
+                    )
+                parameter_names.append(parameter.get("name"))
                 if not isinstance(parameter.get("description"), str):
                     raise ValidateErrorException("parameter.description参数必须为字符串且不为空")
                 if not isinstance(parameter.get("required"), bool):

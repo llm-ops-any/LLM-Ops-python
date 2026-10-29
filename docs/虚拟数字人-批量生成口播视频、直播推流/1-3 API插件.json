@@ -36,7 +36,7 @@
                         "type": "int"
                     },
                     {
-                        "name": "count",
+                        "name": "page",
                         "in": "request_body",
                         "description": "页码，默认值为 1",
                         "required": false,

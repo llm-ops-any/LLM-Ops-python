@@ -319,7 +319,8 @@ class FunctionCallAgent(BaseAgent):
                 tool = tools_by_name[tool_call["name"]]
                 tool_result = tool.invoke(tool_call["args"])
             except Exception as e:
-                # 6.添加错误工具信息
+                # 6.记录异常堆栈并将错误信息作为工具结果，避免工具失败时线上无任何痕迹
+                logging.exception(f"工具[{tool_call['name']}]执行失败")
                 tool_result = f"工具执行出错: {str(e)}"
 
             # 7.将工具消息添加到消息列表中

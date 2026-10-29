@@ -20,6 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 
 from internal.extension.database_extension import db
+from internal.lib.credentials import decrypt_headers
 
 
 class ApiToolProvider(db.Model):
@@ -45,6 +46,11 @@ class ApiToolProvider(db.Model):
         onupdate=datetime.now,
     )
     created_at = Column(DateTime, nullable=False, server_default=text('CURRENT_TIMESTAMP(0)'))
+
+    @property
+    def decrypted_headers(self) -> list[dict]:
+        """返回解密后的请求头明文，仅供发起真实API请求使用，禁止放进任何接口响应"""
+        return decrypt_headers(self.headers)
 
     @property
     def tools(self) -> list["ApiTool"]:

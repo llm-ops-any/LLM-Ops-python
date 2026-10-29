@@ -1,12 +1,19 @@
 import { type BasePaginatorResponse, type BaseResponse } from '@/models/base'
 
+// API插件请求头，响应中的value永远是掩码(****)，has_value表示该请求头是否已保存密钥
+export type ApiToolHeader = {
+  key: string
+  value: string
+  has_value?: boolean
+}
+
 // 获取自定义API插件响应接口
 export type GetApiToolProvidersWithPageResponse = BasePaginatorResponse<{
   id: string
   name: string
   icon: string
   description: string
-  headers: Array<any>
+  headers: ApiToolHeader[]
   tools: Array<any>
   created_at: number
 }>
@@ -33,7 +40,7 @@ export type GetApiToolProviderResponse = BaseResponse<{
   name: string
   icon: string
   openapi_schema: string
-  headers: Array<any>
+  headers: ApiToolHeader[]
   created_at: number
 }>
 
@@ -46,7 +53,7 @@ export type GetApiToolResponse = BaseResponse<{
     id: string
     name: string
     icon: string
-    headers: { key: string; value: string }[]
+    headers: ApiToolHeader[]
     description: string
   }
   inputs: {

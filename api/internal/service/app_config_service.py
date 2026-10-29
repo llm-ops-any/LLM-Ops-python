@@ -48,7 +48,7 @@ class AppConfigService(BaseService):
             self.update(draft_app_config, model_config=validate_model_config)
 
         # 3.循环遍历工具列表删除已经被删除的工具信息
-        tools, validate_tools = self._process_and_validate_tools(draft_app_config.tools)
+        tools, validate_tools = self._process_and_validate_tools(draft_app_config.tools, app.account_id)
 
         # 4.判断是否需要更新草稿配置中的工具列表信息
         if draft_app_config.tools != validate_tools:
@@ -87,7 +87,7 @@ class AppConfigService(BaseService):
             self.update(app_config, model_config=validate_model_config)
 
         # 3.循环遍历工具列表删除已经被删除的工具信息
-        tools, validate_tools = self._process_and_validate_tools(app_config.tools)
+        tools, validate_tools = self._process_and_validate_tools(app_config.tools, app.account_id)
 
         # 4.判断是否需要更新草稿配置中的工具列表信息
         if app_config.tools != validate_tools:
@@ -146,7 +146,8 @@ class AppConfigService(BaseService):
                             url=api_tool.url,
                             method=api_tool.method,
                             description=api_tool.description,
-                            headers=api_tool.provider.headers,
+                            # 说明：数据库里存的是密文，发起真实请求前必须解密
+                            headers=api_tool.provider.decrypted_headers,
                             parameters=api_tool.parameters,
                         )
                     )
@@ -210,8 +211,16 @@ class AppConfigService(BaseService):
             "created_at": datetime_to_timestamp(app_config.created_at),
         }
 
-    def _process_and_validate_tools(self, origin_tools: list[dict]) -> tuple[list[dict], list[dict]]:
-        """根据传递的原始工具信息进行处理和校验"""
+    def _process_and_validate_tools(
+            self,
+            origin_tools: list[dict],
+            account_id: UUID,
+    ) -> tuple[list[dict], list[dict]]:
+        """根据传递的原始工具信息进行处理和校验
+
+        说明：必须带上归属账号，工具记录要按account_id过滤，
+        否则应用配置里塞入他人插件id时会把他人插件的信息回显出来。
+        """
         # 1.循环遍历工具列表删除已被删除的工具
         validate_tools = []
         tools = []
@@ -264,6 +273,7 @@ class AppConfigService(BaseService):
                 tool_record = self.db.session.query(ApiTool).filter(
                     ApiTool.provider_id == tool["provider_id"],
                     ApiTool.name == tool["tool_id"],
+                    ApiTool.account_id == account_id,
                 ).one_or_none()
                 if not tool_record:
                     continue

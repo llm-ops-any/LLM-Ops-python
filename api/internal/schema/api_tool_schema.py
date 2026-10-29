@@ -10,6 +10,7 @@ from marshmallow import Schema, fields, pre_dump
 from wtforms import StringField, ValidationError
 from wtforms.validators import DataRequired, Length, Optional
 
+from internal.lib.credentials import mask_headers
 from internal.lib.validator import BuiltinIconValidator
 from internal.model import ApiToolProvider, ApiTool
 from pkg.paginator import PaginatorReq
@@ -96,7 +97,7 @@ class GetApiToolProviderResp(Schema):
             "name": data.name,
             "icon": data.icon,
             "openapi_schema": data.openapi_schema,
-            "headers": data.headers,
+            "headers": mask_headers(data.headers),
             "created_at": int(data.created_at.timestamp()),
         }
 
@@ -122,7 +123,7 @@ class GetApiToolResp(Schema):
                 "name": provider.name,
                 "icon": provider.icon,
                 "description": provider.description,
-                "headers": provider.headers,
+                "headers": mask_headers(provider.headers),
             }
         }
 
@@ -145,7 +146,7 @@ class GetApiToolProvidersWithPageResp(Schema):
             "name": data.name,
             "icon": data.icon,
             "description": data.description,
-            "headers": data.headers,
+            "headers": mask_headers(data.headers),
             "tools": [{
                 "id": tool.id,
                 "description": tool.description,

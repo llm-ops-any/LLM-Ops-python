@@ -10,7 +10,7 @@ import {
   useValidateOpenAPISchema,
 } from '@/hooks/use-tool'
 import IconPicker from '@/components/IconPicker.vue'
-import { type CreateApiToolProviderRequest } from '@/models/api-tool'
+import { type ApiToolHeader, type CreateApiToolProviderRequest } from '@/models/api-tool'
 import moment from 'moment/moment'
 import { typeMap } from '@/config'
 import { Form, type ValidatedError } from '@arco-design/web-vue'
@@ -21,6 +21,10 @@ const props = defineProps({
   createType: { type: String, required: true },
 })
 const emits = defineEmits(['update:create-type'])
+
+// 请求头密钥的掩码占位，与后端 internal/lib/credentials.py 的 MASKED_VALUE 保持一致
+const MASKED_HEADER_VALUE = '****'
+
 const form = ref<{
   icon: string
   name: string
@@ -115,7 +119,11 @@ const handleUpdate = async () => {
   form.value.icon = api_tool_provider.value.icon
   form.value.name = api_tool_provider.value.name
   form.value.openapi_schema = api_tool_provider.value.openapi_schema
-  form.value.headers = api_tool_provider.value.headers
+  // 3.4 请求的value由后端返回掩码，原样回填；不改动它就沿用已保存的密钥
+  form.value.headers = (api_tool_provider.value.headers ?? []).map((header: ApiToolHeader) => ({
+    key: header.key,
+    value: header.value,
+  }))
 
   showUpdateModal.value = true
 }
@@ -147,23 +155,29 @@ const handleSubmit = async ({
   // 1.如果存在错误则直接结束
   if (errors) return
 
-  // 2.根据不同的类型发起不同的请求
+  // 2.把请求头的掩码占位还原成空值，交给后端沿用已保存的密钥
+  const payload = {
+    ...values,
+    headers: (Array.isArray(values.headers) ? values.headers : []).map((header: Record<string, any>) => ({
+      key: header.key,
+      value: header.value === MASKED_HEADER_VALUE ? '' : header.value,
+    })),
+  } as CreateApiToolProviderRequest
+
+  // 3.根据不同的类型发起不同的请求
   if (props.createType === 'tool') {
-    // 3.调用处理器发起创建请求
-    await handleCreateApiToolProvider(values as CreateApiToolProviderRequest)
+    // 4.调用处理器发起创建请求
+    await handleCreateApiToolProvider(payload)
   } else if (showUpdateModal.value) {
-    // 4.调用接口发起更新API工具请求
-    await handleUpdateApiToolProvider(
-      api_tool_providers.value[showIdx.value]['id'],
-      values as CreateApiToolProviderRequest,
-    )
+    // 5.调用接口发起更新API工具请求
+    await handleUpdateApiToolProvider(api_tool_providers.value[showIdx.value]['id'], payload)
   }
 
-  // 5.执行后续操作，涵盖隐藏模态窗、隐藏抽屉
+  // 6.执行后续操作，涵盖隐藏模态窗、隐藏抽屉
   handleCancel()
   showIdx.value = -1
 
-  // 6.重新加载数据
+  // 7.重新加载数据
   await loadApiToolProviders(true, String(route.query?.search_word ?? ''))
 }
 
@@ -438,6 +452,10 @@ watch(
           <a-form-item label="Headers">
             <!-- 请求头表单 -->
             <div class="rounded-lg border border-gray-200 w-full overflow-x-auto">
+              <p class="text-xs text-gray-400 px-3 pt-3 pb-1 leading-[18px]">
+                Value 显示为 <span class="font-medium text-gray-500">****</span>
+                表示已保存密钥，保持不变即沿用原密钥；填写新值会覆盖。
+              </p>
               <table class="w-full leading-[18px] text-xs text-gray-700 font-normal mb-3">
                 <thead class="text-gray-500">
                   <tr class="border-b border-gray-200">

@@ -19,6 +19,7 @@ from internal.exception import (
     ValidateErrorException,
     NotFoundException,
 )
+from internal.lib.credentials import encrypt_headers
 from internal.model import ApiToolProvider, ApiTool, Account
 from internal.schema.api_tool_schema import (
     CreateApiToolReq,
@@ -70,11 +71,12 @@ class ApiToolService(BaseService):
             ).delete()
 
         # 6.修改工具提供者信息
+        # 说明：headers里的value传空表示沿用原密钥，避免用户改个名字就必须重填密钥
         self.update(
             api_tool_provider,
             name=req.name.data,
             icon=req.icon.data,
-            headers=req.headers.data,
+            headers=encrypt_headers(req.headers.data, api_tool_provider.headers),
             description=openapi_schema.description,
             openapi_schema=req.openapi_schema.data,
         )
@@ -116,12 +118,15 @@ class ApiToolService(BaseService):
 
     def get_api_tool(self, provider_id: UUID, tool_name: str, account: Account) -> ApiTool:
         """根据传递的provider_id+tool_name获取对应工具的参数详情信息"""
-        api_tool = self.db.session.query(ApiTool).filter_by(
-            provider_id=provider_id,
-            name=tool_name,
+        # 说明：account_id必须在SQL层过滤，不能只靠取出后再比对；
+        #      否则查询会先把别人的工具取出来再判断，属于越权读取的前置条件
+        api_tool = self.db.session.query(ApiTool).filter(
+            ApiTool.provider_id == provider_id,
+            ApiTool.name == tool_name,
+            ApiTool.account_id == account.id,
         ).one_or_none()
 
-        if api_tool is None or api_tool.account_id != account.id:
+        if api_tool is None:
             raise NotFoundException("该工具不存在")
 
         return api_tool
@@ -158,7 +163,7 @@ class ApiToolService(BaseService):
             icon=req.icon.data,
             description=openapi_schema.description,
             openapi_schema=req.openapi_schema.data,
-            headers=req.headers.data,
+            headers=encrypt_headers(req.headers.data),
         )
 
         # 4.创建api工具并关联api_tool_provider

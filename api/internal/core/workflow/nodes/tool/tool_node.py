@@ -77,7 +77,8 @@ class ToolNode(BaseNode):
                 url=api_tool.url,
                 method=api_tool.method,
                 description=api_tool.description,
-                headers=api_tool.provider.headers,
+                # 说明：数据库里存的是密文，发起真实请求前必须解密
+                headers=api_tool.provider.decrypted_headers,
                 parameters=api_tool.parameters,
             ))
 

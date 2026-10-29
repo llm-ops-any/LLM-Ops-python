@@ -30,3 +30,6 @@ __pycache__/
 
 # echoMimic 数字人py服务相关
 echoMimic/.env
+
+# gradio-demo 数字人页面相关
+gradio-demo/.env

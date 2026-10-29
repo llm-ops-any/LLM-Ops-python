@@ -35,6 +35,7 @@
 import argparse
 import io
 import os
+import re
 import subprocess
 import sys
 
@@ -55,6 +56,7 @@ RULES = (
     ('team-profile.template.md', '团队配置.md'),
     ('dev-conventions.template.md', '开发规范.md'),
     ('文档结构.template.md', '文档结构.md'),
+    ('协作规范.template.md', '协作规范.md'),
 )
 
 # 模板里的「用法 / 怎么用」是写给复制者的，落到项目里就是噪音。复制时顺手改掉：
@@ -70,6 +72,11 @@ FINALIZE = {
     '开发规范.md': ('# 开发规范（模板）', '# 开发规范',
                 '> 本文件由人维护，**写代码前必读**。与 AIDLC 流程规则冲突时，流程以技能为准；'
                 '代码风格以本文件为准。'),
+    '协作规范.md': ('# 协作规范', '# 协作规范',
+                '> 本文件只写**本项目要执行**的差异，通用道理不抄（全文见 '
+                '`04技能/aidlc/references/common/parallel-collaboration.md`）。'
+                '**单人作业**：保留第 1、5 节（取号 / 开工自检），第 2~4 节删掉，'
+                '并在 `文档结构.md` 写明「暂不建 + 为什么」；**多人并行**：全留，人编号表在 `团队配置.md`。'),
 }
 STATE = '''# AIDLC State
 
@@ -168,6 +175,137 @@ def fill_project_line(text, name, repo):
     return '\n'.join(out) + '\n'
 
 
+def git_people(root):
+    """从 git 历史读参与人：按**首次提交顺序**返回 [(人编号, 姓名, email, 提交数)]。
+
+    为什么按首次提交排序：人编号是 CR 号第一位，一号一人、永不改；按「谁先进项目」
+    分配最接近人的直觉，也最不容易在后续插入新人时重排（新人总是拿最大号）。
+    一个人多个 email（工作/个人/另一台机器）→ 每个 email 一行、人编号相同，
+    因为取号是查 email，不是查姓名。
+    """
+    raw = git('log', '--reverse', '--format=%ae\t%an', cwd=root)
+    if not raw:
+        return []
+    order, counts, last_name = [], {}, {}
+    for line in raw.splitlines():
+        if '\t' not in line:
+            continue
+        email, name = line.split('\t', 1)
+        email = email.strip().lower()
+        name = name.strip() or email
+        if not email:
+            continue
+        counts[email] = counts.get(email, 0) + 1
+        last_name[email] = name          # 用最近一次提交里的写法（改名后取新名）
+        if email not in order:
+            order.append(email)
+    people, num = [], 0
+    for email in order:
+        num += 1
+        people.append((num, last_name[email], email, counts[email]))
+    return people
+
+
+def fill_team_rows(text, people):
+    """把角色表里三行空模板换成 git 读到的人（第一个兼 PO / REV，其余 DEV）。
+
+    只替换那三行；表头、下面的说明块、其它章节一个字不碰。
+    """
+    if not people:
+        return text
+    lines = text.splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if ln.startswith('| `PO`') and '|' in ln[7:]:
+            start = i
+            break
+    if start is None:
+        return text
+    end = start
+    while end < len(lines) and lines[end].startswith('|'):
+        end += 1
+    block = []
+    for num, name, email, cnt in people:
+        note = '提交 %d 次' % cnt
+        if num == 1:
+            block.append('| `PO` | %s | `%s` | %d | 定范围、验收（%s） |' % (name, email, num, note))
+            block.append('| `DEV` | %s | `%s` | %d | 设计实现、写代码 |' % (name, email, num))
+            block.append('| `REV` | %s | `%s` | %d | 交叉评审（%s） |' % (name, email, num, note))
+        else:
+            block.append('| `DEV` | %s | `%s` | %d | 按需参与（%s） |' % (name, email, num, note))
+    if len(people) > 9:
+        block.append('| — | **超过 9 人** | — | — | 人编号只有 1~9：拆项目或给多人共用编号 + `AIDLC_PERSON` |')
+    note = ('> 上表由 `初始化.py` 按 **git 首次提交顺序**自动生成：人编号 = 提交先后，'
+            '**分配后不要改**（CR 号第一位）；角色（PO/DEV/REV）是按「第一人兼三角」给的初稿，'
+            '按实际分工改；一个人多个 email 就再加行、人编号填同一个。')
+    lines[start:end] = block + ['', note]
+    return '\n'.join(lines) + '\n'
+
+
+def _team_rows(text):
+    """取 `## 角色` 段里的表格行 → [(行号, [cells]), ...]。"""
+    lines = text.splitlines()
+    try:
+        i = lines.index('## 角色')
+    except ValueError:
+        return lines, []
+    rows, j = [], i + 1
+    while j < len(lines):
+        if lines[j].startswith('## '):
+            break
+        if lines[j].lstrip().startswith('|'):
+            rows.append((j, [c.strip() for c in lines[j].strip().strip('|').split('|')]))
+        j += 1
+    return lines, rows
+
+
+def refresh_team(text, people, maps=None):
+    """把 git 里出现、但表里没有的人**追加**进角色表；**已有人编号一律不动**。
+
+    为什么不重排：人编号是 CR 号的第一位（`16102100` 的 `1`）。重排等于让历史 CR 对不上人，
+    比「编号不连续」贵得多。新来的人永远拿 max+1。
+    `maps`：{email: 人编号}，用于「这个人不是新人，只是多了个邮箱」。
+    """
+    maps = maps or {}
+    lines, rows = _team_rows(text)
+    if not rows:
+        return text, []
+    have, maxnum = {}, 0
+    for _j, cells in rows:
+        if len(cells) < 5:
+            continue
+        email = cells[2].strip().strip('`').lower()
+        try:
+            num = int(re.sub(r'[^0-9]', '', cells[3]) or 0)
+        except ValueError:
+            num = 0
+        if email:
+            have[email] = num
+        maxnum = max(maxnum, num)
+    added, insert_at = [], None
+    for _num, name, email, cnt in people:
+        e = email.lower()
+        if e in have:
+            continue
+        num = maps.get(e) or maps.get(email)
+        if num:
+            num = int(num)
+            note = 'git 提交 %d 次（同一个人另一个邮箱）' % cnt
+        else:
+            maxnum += 1
+            num = maxnum
+            note = 'git 提交 %d 次（身份待确认，改姓名即可）' % cnt
+        added.append((num, '| `DEV` | %s | `%s` | %d | %s |' % (name, email, num, note)))
+        have[e] = num
+    if not added:
+        return text, []
+    added.sort(key=lambda x: x[0])
+    for j, cells in rows:
+        insert_at = j
+    lines[insert_at + 1:insert_at + 1] = [r for _n, r in added]
+    return '\n'.join(lines) + '\n', added
+
+
 def main():
     ap = argparse.ArgumentParser(add_help=True)
     ap.add_argument('root', nargs='?', default=None, help='项目根（默认：git 顶层，或当前目录）')
@@ -183,6 +321,10 @@ def main():
     ap.add_argument('--no-skill', action='store_true', help='不复制技能副本')
     ap.add_argument('--no-hooks', action='store_true', help='不装 git 钩子')
     ap.add_argument('--no-verify', action='store_true', help='跑完不自检')
+    ap.add_argument('--refresh-team', action='store_true',
+                    help='把 git 里出现、角色表还没有的人追加进 团队配置.md（已有人编号不动）')
+    ap.add_argument('--map', action='append', default=[],
+                    help='email=人编号，用于「不是新人，只是多一个邮箱」，可多次')
     ap.add_argument('--refresh-templates', action='store_true',
                     help='只把已存在规则文件的「模板头」改成项目格式（H1 + 用法块），不动正文')
     args = ap.parse_args()
@@ -224,6 +366,23 @@ def main():
                     print('2 规则      %-12s 已改成本项目格式（模板头去掉）' % dst)
                 else:
                     print('2 规则      %-12s 已是本项目格式' % dst)
+            elif dst == '团队配置.md' and args.refresh_team:
+                cur = read(dp) or ''
+                maps = {}
+                for kv in args.map:
+                    if '=' in kv:
+                        k, v = kv.split('=', 1)
+                        maps[k.strip().lower()] = v.strip()
+                new, added = refresh_team(cur, git_people(root), maps)
+                if added and not dry:
+                    write(dp, new)
+                    print('2 团队      %-12s 追加 %d 人：%s' % (
+                        dst, len(added), '、'.join(re.sub(r'^.*?\|\s*`([^`]+)`\s*\|\s*(\d+)\s*\|.*$',
+                                                          r'\1(#\2)', r) for _n, r in added)))
+                elif added:
+                    print('2 团队      %-12s 将追加 %d 人' % (dst, len(added)))
+                else:
+                    print('2 团队      %-12s 与 git 一致，无新人' % dst)
             else:
                 print('2 规则      %-12s 已存在，跳过（不覆盖）' % dst)
             continue
@@ -232,13 +391,20 @@ def main():
             print('2 规则      %-12s ✗ 找不到模板 %s' % (dst, src))
             continue
         text = finalize(text, dst)
+        suffix = ''
         if dst == '团队配置.md':
             text = fill_project_line(text, name, repo)
+            people = [] if dry else git_people(root)
+            if people:
+                text = fill_team_rows(text, people)
+                suffix = '，人编号已按 git 的 %d 位参与人预填' % len(people)
+            else:
+                suffix = '，未读到 git 参与人，角色表待填'
         if dry:
             print('2 规则      %-12s 将复制' % dst)
         else:
             write(dp, text)
-            print('2 规则      %-12s 已复制（待填）' % dst)
+            print('2 规则      %-12s 已复制（待填）%s' % (dst, suffix))
 
     # --refresh-templates 只改规则文件的「模板头」，别的什么都不做。
     # （2026-10-26 踩到：这个模式曾继续走锚点步骤，entry 默认 auto ⇒ 顺手把 AGENTS.md 也接管了，
@@ -330,7 +496,10 @@ def main():
     print('  2. 填 开发文档/00规则/团队配置.md：审批模式（五档选一）、测试策略（三选一）、角色与邮箱、人编号')
     print('  3. 填 开发文档/00规则/开发规范.md：语言/语法版本、交付形态、测试框架、目录分层')
     print('  4. 填 开发文档/00规则/文档结构.md 第四节「本项目补充」')
-    print('  5. 逐条过 references/初始化自检清单.md，再开始第一条 CR')
+    print('  5. 过一遍 开发文档/00规则/协作规范.md：单人就删掉第 2~4 节，多人补人编号表（团队配置.md）')
+    print('  6. 若项目里已有 openspec/：python 04技能/aidlc/scripts/接管-openspec.py <项目根> --write')
+    print('     （先把历史变更迁成 CR，再接新需求；迁移前后都跑 汇总.py + 自检.py）')
+    print('  7. 逐条过 references/初始化自检清单.md，再开始第一条 CR')
     return 0
 
 

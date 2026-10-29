@@ -73,8 +73,9 @@ CR_FILES = {
     '变更说明': '32-变更说明.md',
 }
 
-DESIGN_DIR = '08-设计'
-DESIGN_DIR_LEGACY = '设计'          # 2026-10-27 之前的老项目用这个裸名
+DESIGN_DIR = '08-技术设计'
+# 两代旧名，都认：`08-设计/`（2026-10-27 ~ 10-29）、`设计/`（2026-10-27 之前的裸名）
+DESIGN_DIR_LEGACY = ('08-设计', '设计')
 # 逐级编号：目录 08，内部 08-N。**超过 9 份就写 08-01 两位**，否则字符串排序会乱
 # （'08-10' < '08-2'）。
 DESIGN_FILES = {
@@ -121,8 +122,8 @@ def find_audit_files(cr_dir):
 
 
 def design_dir(cr_dir):
-    """设计目录：`08-设计/`，老项目退回 `设计/`。都没有返回 None。"""
-    for name in (DESIGN_DIR, DESIGN_DIR_LEGACY):
+    """设计目录：`08-技术设计/`，老项目依次退回 `08-设计/`、`设计/`。都没有返回 None。"""
+    for name in (DESIGN_DIR,) + DESIGN_DIR_LEGACY:
         p = os.path.join(cr_dir, name)
         if os.path.isdir(p):
             return p
@@ -130,7 +131,7 @@ def design_dir(cr_dir):
 
 
 def design_files(cr_dir):
-    """`08-设计/` 下所有 .md，**按文件名排序**。
+    """`08-技术设计/` 下所有 .md，**按文件名排序**。
 
     逐级编号（`08-1-` `08-2-`）天然有序，所以不用维护阅读顺序表；
     老项目的裸名（`应用设计.md`）则退化为字典序，能读就行。

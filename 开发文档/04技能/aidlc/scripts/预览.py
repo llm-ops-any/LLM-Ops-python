@@ -43,7 +43,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # 不生成 __pycache__：技能副本是只读资源（同 汇总.py / 自检.py 的理由）
 sys.dont_write_bytecode = True
 sys.path.insert(0, HERE)
-from _aidlc_common import design_dir  # noqa: E402  （设计目录名可能带编号：08-设计）
+from _aidlc_common import design_dir  # noqa: E402  （设计目录名可能带编号：08-技术设计）
 
 SKILL_DIR = os.path.dirname(HERE)                 # …/aidlc
 ASSETS = os.path.join(SKILL_DIR, 'assets')
@@ -239,9 +239,9 @@ def _cr_name(dirname):
 def _docs_of(cr_path):
     """一条 CR 下所有 .md（含设计子目录），**按编号排**。
 
-    2026-10-27 引入编号后：带号的文件按号排（`00-状态` `01-需求` … `08-设计/08-1-…`），
+    2026-10-27 引入编号后：带号的文件按号排（`00-状态` `01-需求` … `08-技术设计/08-1-…`），
     编号本身就是阅读顺序，DOC_ORDER 这张手工表只在**老项目（裸名）**上兜底。
-    设计目录名可能是 `08-设计`，也可能是老的 `设计` —— 用 design_dir() 取实际名，
+    设计目录名可能是 `08-技术设计`，也可能是老的 `设计` —— 用 design_dir() 取实际名，
     返回的是**真实相对路径**，直接拼成侧边栏链接。
     """
     names = [f for f in os.listdir(cr_path) if f.endswith('.md')]

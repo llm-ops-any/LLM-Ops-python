@@ -43,6 +43,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 不生成 __pycache__：技能副本是只读资源，在里面写字节码会污染项目（git 还会看见）
@@ -418,6 +419,25 @@ def check_rules(rows):
         rows.append(('w', '规则文件', '角色表没有「人编号」列',
                      '人编号是 CR 号首位；缺了没法两人并行取号'))
 
+    # 仅静态 × 构建命令：钩子读到非空命令就会在合并后执行，等于偷偷跑了构建。
+    #
+    # 只认「- 构建命令：xxx」这种**字段行**。不能拿 pick() 的结果就判：项目里常有一句
+    # 「- **未声明「构建命令」**：本项目构建产物不入库…」，那是说明，不是命令（2026-10-29 误报）。
+    if '仅静态' in tline:
+        cmd = ''
+        for l in text.splitlines():
+            if not re.match(r'^\s*-\s*\**构建命令', l):
+                continue
+            val = re.split(r'[：:]', l, 1)[-1]
+            val = re.sub(r'^[（(].*', '', val).strip().strip('*` ')
+            if val and not val.startswith(('（', '不', '留空', '无', '未')):
+                cmd = val
+            break
+        if cmd:
+            rows.append(('w', '规则文件', '测试策略＝仅静态，却声明了构建命令：%s' % cmd[:40],
+                         '这个档位不执行任何脚本命令，钩子却会在合并后跑它 —— 要么把这行留空，'
+                         '要么把档位升到 全量/仅回归'))
+
     if mode in NO_GATE_MODES and '不生效' not in text and '无门禁' not in text:
         rows.append(('w', '规则文件', '档位＝%s，但门禁表没标哪些门不生效' % mode,
                      '把 G2/G3 标「本模式不生效」，或整表换成「无门禁」—— 否则读者以为这里真会停'))
@@ -516,18 +536,21 @@ def check_dead_rules(rows):
 CR_TS_RE = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$')
 
 
-def check_cr_times(rows):
+def check_cr_times(rows, fix=False):
     """每条 CR 的 `状态.md` 都要有 `创建` / `更新`，且是 `YYYY-MM-DD HH:MM:SS`。
 
     为什么要它：这两个时间以前谁都没写，想知道「这条 CR 多久没动」只能翻 git，
     而 git 时间会被批量重构污染 —— 试点2 实测有 3 个 CR 目录的首提交都是同一次重构的
     16:57:04，把重构时刻当成了 CR 创建时刻。
+
+    `--fix` 会按**状态文件的 mtime** 补上缺的两行（真实时间，不是编的）：
+    迁移/接管进来的历史 CR 只有这一个可信时刻，补完至少「多久没动」能算。
     """
     dirs = _cr_dirs()
     if not dirs:
         rows.append(('d', 'CR 时间', '还没有 CR，跳过', ''))
         return
-    bad = []
+    bad, fixed = [], 0
     for d in dirs:
         p = find_cr_file(d, '状态')
         if not p:
@@ -538,17 +561,42 @@ def check_cr_times(rows):
             vals.setdefault(m.group(1), m.group(2).strip())
         name = os.path.basename(d)
         miss = [k for k in ('创建', '更新') if not vals.get(k)]
+        if miss and fix:
+            t = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(p)))
+            lines = text.split('\n')
+            idx = None
+            for i, ln in enumerate(lines):
+                if ln.startswith(('- 阶段：', '- 阶段:')):
+                    idx = i
+                    break
+            if idx is None:
+                for i, ln in enumerate(lines):
+                    if ln.startswith('- 编号'):
+                        idx = i
+                        break
+            add = ['- %s：%s' % (k, t) for k in miss]
+            if idx is None:
+                lines = [lines[0], ''] + add + lines[1:]
+            else:
+                lines[idx + 1:idx + 1] = add
+            with io.open(p, 'w', encoding='utf-8', newline='\n') as f:
+                f.write('\n'.join(lines))
+            fixed += 1
+            continue
         if miss:
             bad.append('%s 缺 %s' % (name, '/'.join(miss)))
         for k in ('创建', '更新'):
             v = vals.get(k)
             if v and not CR_TS_RE.match(v):
                 bad.append('%s 的 %s 写成「%s」' % (name, k, v))
+    if fixed:
+        rows.append(('v', 'CR 时间', '%d 条 CR 缺创建/更新 → 已按文件时间补（--fix）' % fixed, ''))
     if bad:
         rows.append(('w', 'CR 时间', '%d 处时间缺失或格式不对' % len(bad),
                      '；'.join(bad[:6]) + (' 等' if len(bad) > 6 else '')
-                     + ' —— 统一写 `- 创建：YYYY-MM-DD HH:MM:SS`（年月日 时分秒）'))
-    else:
+                     + ' —— 统一写 `- 创建：YYYY-MM-DD HH:MM:SS`（年月日 时分秒）；'
+                       '或跑 --fix 按文件时间自动补'))
+    elif not fixed:
         rows.append(('v', 'CR 时间', '%d 条 CR 的创建/更新时间齐全（年月日 时分秒）' % len(dirs), ''))
 
 
@@ -612,15 +660,31 @@ def _base(v):
     return re.split(r'[（(]', (v or '').strip(), maxsplit=1)[0].strip()
 
 
-def _started(cr):
-    """这条 CR 是否已经开工。not-started / cancelled 算没开工。"""
+def _stage(cr):
+    """当前阶段（小写）。没有状态文件 ⇒ 空串。"""
     p = find_cr_file(cr, '状态')
     if not p:
-        return False
+        return ''
     with io.open(p, encoding='utf-8', errors='replace') as f:
         m = re.search(r'^-\s*阶段[：:]\s*(.+)$', f.read(), re.M)
-    stage = (m.group(1) if m else '').strip().lower()
+    return (m.group(1) if m else '').strip().lower()
+
+
+def _started(cr):
+    """这条 CR 是否已经开工。not-started / cancelled 算没开工。"""
+    stage = _stage(cr)
     return not ('not-started' in stage or 'cancelled' in stage or not stage)
+
+
+def _closed(cr):
+    """已交付 / 已归档的 CR：终态，不再要求「施工图」。
+
+    为什么单独判：迁移老项目时，历史 CR 会被批量补上编号（`状态.md` → `00-状态.md`），
+    于是从「老命名 ⇒ 只建议」变成「新命名 ⇒ 判错」——**已交付的 CR 被要求补计划**，
+    这是把自检变成噪音。计划是进构建前的施工图，交付完了再补等于事后编造。
+    """
+    stage = _stage(cr)
+    return any(k in stage for k in ('delivered', 'archived', 'done', 'closed', '已交付', '已归档'))
 
 
 def check_plan(rows):
@@ -633,8 +697,11 @@ def check_plan(rows):
     为什么对新老项目区别对待：`06-执行计划.md` 是 2026-10-27 才引入的，
     迁移前的老 CR 本来就没有 —— 一上来全判错，只会让人把自检当噪音关掉。
     """
-    hard, soft, ok, idle = [], [], 0, 0
+    hard, soft, ok, idle, closed = [], [], 0, 0, []
     for d in _cr_dirs():
+        if _closed(d):
+            closed.append(_crno(d))
+            continue
         if not _started(d):
             idle += 1
             continue
@@ -656,6 +723,8 @@ def check_plan(rows):
         rows.append(('v', '执行计划', '%d 条已开工 CR 都有执行计划' % ok, ''))
     elif not hard:
         rows.append(('d', '执行计划', '另有 %d 条未开工、%d 条已有计划' % (idle, ok), ''))
+    if closed:
+        rows.append(('d', '执行计划', '%d 条已交付/归档的历史 CR 无计划（终态，不补）' % len(closed), ''))
 
 
 def check_resources(rows):
@@ -776,7 +845,7 @@ def main():
     check_resources(rows)
     check_risks(rows)
     check_dead_rules(rows)
-    check_cr_times(rows)
+    check_cr_times(rows, fix)
     check_orphan_cr(rows)
 
     print('AIDLC 自检  %s' % ROOT)

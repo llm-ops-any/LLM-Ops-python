@@ -4,7 +4,7 @@
 
 背景：CR 内的文档从「裸中文名」改为「两位数字前缀 + 中文名」：
     需求.md        → 01-需求.md
-    设计/          → 08-设计/，内部 应用设计.md → 08-1-应用设计.md
+    设计/          → 08-技术设计/，内部 应用设计.md → 08-1-应用设计.md
     审计-张勇.md    → 40-审计-张勇.md
 
 新项目不用跑（初始化就是新命名）。**老项目不跑也能继续用** ——
@@ -58,13 +58,13 @@ def plan_cr(cr_dir):
         if new:
             ops.append((src, os.path.join(cr_dir, new)))
 
-    # 设计目录：`设计/` → `08-设计/`，内部标准 5 份带号
+    # 设计目录：`设计/` / `08-技术设计/` → `08-技术设计/`，内部标准 5 份带号
     #
     # 顺序很关键：**先在旧目录里把文件改名，最后才改目录名**。
     # 反过来的话，目录一改，`设计/业务规则.md` 这个源路径当场不存在，
     # 后面的 rename 直接 OSError（2026-10-27 预演时踩到）。
     dir_ops = []
-    for dname in (DESIGN_DIR_LEGACY, DESIGN_DIR):
+    for dname in DESIGN_DIR_LEGACY + (DESIGN_DIR,):
         dsrc = os.path.join(cr_dir, dname)
         if not os.path.isdir(dsrc):
             continue

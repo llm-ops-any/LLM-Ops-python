@@ -295,9 +295,19 @@ def _stage(cr):
 
 
 def _started(cr):
-    """这条 CR 是否已经开工。not-started / cancelled 算没开工。"""
+    """这条 CR 是否已经开工。
+
+    不算开工的：`not-started`（占了号没动）、`cancelled`（撤回）、
+    **`awaiting-approval`（还在等 G1 批准，一个字都没写）**、阶段空。
+
+    为什么要把 awaiting-approval 排除：2026-10-29 实测（中海油 haiyou）某条技术债
+    阶段写 `awaiting-approval`、下一步写「PO 审完批准，批准后本轮仍不实施」——
+    它连需求都还没批，却被判「已开工却没有执行计划」，报了一条假 ✗。
+    开工的标志是**进入设计/编码**，不是「等批」。
+    """
     stage = _stage(cr)
-    return not ('not-started' in stage or 'cancelled' in stage or not stage)
+    return not ('not-started' in stage or 'cancelled' in stage
+                or 'awaiting-approval' in stage or not stage)
 
 
 def _closed(cr):

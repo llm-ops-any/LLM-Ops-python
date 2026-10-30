@@ -1,8 +1,11 @@
+import base64
 import os
+import uuid
+from pathlib import Path
+
 import dotenv
 import gradio as gr
 import requests
-from openai import OpenAI
 
 dotenv.load_dotenv()
 
@@ -41,23 +44,66 @@ def fetch_data(query: str):
 
 
 def text_to_speech(text: str):
-    """将传递的文本转换成音频数据"""
+    """调用阿里百炼 Qwen-Audio-TTS 把文案合成为音频，返回本地文件路径"""
+    text = (text or "").strip()
+    if not text:
+        raise gr.Error("文案内容为空，请先获取或填写文案")
+
+    # 1.从环境变量中获取百炼配置（默认 qwen-audio-3.1-tts-flash，走 TTS 专用接口）
+    api_key = os.getenv("DASHSCOPE_API_KEY")
+    tts_url = os.getenv(
+        "DASHSCOPE_TTS_URL",
+        "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer",
+    )
+    model = os.getenv("TTS_MODEL", "qwen-audio-3.1-tts-flash")
+    voice = os.getenv("TTS_VOICE", "longanhuan_v3.1")
+    if not api_key:
+        raise gr.Error("未配置 DASHSCOPE_API_KEY，请检查 .env")
+
+    # 2.组装请求（百炼原生接口，返回的是音频下载地址而不是字节流）
+    #    注意：qwen3-tts 系列认 language_type，qwen-audio-tts / cosyvoice 认 language_hints + format
+    if model.startswith("qwen3-tts"):
+        audio_input = {"text": text, "voice": voice, "language_type": "Chinese"}
+    else:
+        audio_input = {
+            "text": text,
+            "voice": voice,
+            "format": "mp3",
+            "sample_rate": 24000,
+            "language_hints": ["zh"],
+        }
+    payload = {"model": model, "input": audio_input}
     try:
-        client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_API_KEY")
-            )
-        response = client.audio.speech.create(
-            model="tts-1",
-            voice="alloy",
-            response_format="mp3",
-            input=text,
+        response = requests.post(
+            tts_url,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=120,
         )
-        audio_file = Path(__file__).parent / f"storage/audio/{str(uuid.uuid4())}.mp3"
-        response.stream_to_file(audio_file)
-        return audio_file
+        if response.status_code != 200:
+            raise gr.Error(f"百炼返回 {response.status_code}：{response.text[:200]}")
+
+        # 3.取出音频（正常是 download url，个别模型直接给 base64）
+        audio_info = (response.json().get("output") or {}).get("audio") or {}
+        audio_bytes = b""
+        if audio_info.get("url"):
+            audio_bytes = requests.get(audio_info["url"], timeout=120).content
+        elif audio_info.get("data"):
+            audio_bytes = base64.b64decode(audio_info["data"])
+        if not audio_bytes:
+            raise gr.Error(f"百炼未返回音频数据：{response.text[:200]}")
+
+        # 4.落盘后交给 Audio 组件播放
+        audio_dir = Path(__file__).parent / "storage" / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        audio_file = audio_dir / f"{uuid.uuid4()}.mp3"
+        audio_file.write_bytes(audio_bytes)
+        return str(audio_file)
+    except gr.Error:
+        raise
     except Exception as e:
-        return f"语音生成失败：{str(e)}"
+        # Audio 输出只接受文件路径，返回字符串会被当成路径去读取而崩掉整个请求，这里改为弹窗报错
+        raise gr.Error(f"语音生成失败：{e}")
 
 # WebUI界面的部分
 with gr.Blocks() as webui:

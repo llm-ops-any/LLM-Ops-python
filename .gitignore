@@ -33,3 +33,7 @@ echoMimic/.env
 
 # gradio-demo 数字人页面相关
 gradio-demo/.env
+gradio-demo/.venv/
+gradio-demo/storage/
+gradio-demo/run.log
+gradio-demo/run.err.log

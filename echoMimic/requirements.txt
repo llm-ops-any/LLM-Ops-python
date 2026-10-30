@@ -17,4 +17,4 @@ av==11.0.0
 gradio<=4.44.1
 huggingface-hub<0.26.0
 python-dotenv
-openai
+requests

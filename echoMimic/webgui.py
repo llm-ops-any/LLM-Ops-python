@@ -4,6 +4,7 @@
 webui
 '''
 import argparse
+import base64
 import os
 import random
 import uuid
@@ -20,7 +21,6 @@ from diffusers import AutoencoderKL, DDIMScheduler
 from facenet_pytorch import MTCNN
 from moviepy.editor import VideoFileClip, AudioFileClip
 from omegaconf import OmegaConf
-from openai import OpenAI
 
 from src.models.face_locator import FaceLocator
 from src.models.unet_2d_condition import UNet2DConditionModel
@@ -71,7 +71,7 @@ infer_config = OmegaConf.load(inference_config_path)
 
 ############# model_init started #############
 ## vae init
-vae = AutoencoderKL.from_pretrained(config.pretrained_vae_path).to("cuda", dtype=weight_dtype)
+vae = AutoencoderKL.from_pretrained(config.pretrained_vae_path).to(dtype=weight_dtype, device=device)
 
 ## reference net init
 reference_unet = UNet2DConditionModel.from_pretrained(
@@ -106,7 +106,7 @@ denoising_unet.load_state_dict(torch.load(config.denoising_unet_path, map_locati
 
 ## face locator init
 face_locator = FaceLocator(320, conditioning_channels=1, block_out_channels=(16, 32, 96, 256)).to(dtype=weight_dtype,
-                                                                                                  device="cuda")
+                                                                                                  device=device)
 face_locator.load_state_dict(torch.load(config.face_locator_path))
 
 ## load audio processor params
@@ -128,7 +128,7 @@ pipe = Audio2VideoPipeline(
     audio_guider=audio_processor,
     face_locator=face_locator,
     scheduler=scheduler,
-).to("cuda", dtype=weight_dtype)
+).to(dtype=weight_dtype, device=device)
 
 
 def select_face(det_bboxes, probs):
@@ -179,7 +179,7 @@ def process_video(uploaded_img, uploaded_audio, width, height, length, seed, fac
         face_mask = cv2.resize(face_mask, (width, height))
 
     ref_image_pil = Image.fromarray(face_img[:, :, [2, 1, 0]])
-    face_mask_tensor = torch.Tensor(face_mask).to(dtype=weight_dtype, device="cuda").unsqueeze(0).unsqueeze(
+    face_mask_tensor = torch.Tensor(face_mask).to(dtype=weight_dtype, device=device).unsqueeze(0).unsqueeze(
         0).unsqueeze(0) / 255.0
 
     video = pipe(
@@ -219,6 +219,9 @@ def fetch_data(query: str):
     api_key = os.getenv("LLMOPS_API_KEY")
     app_id = os.getenv("LLMOPS_APP_ID")
 
+    if not (url and api_key and app_id):
+        return "配置缺失: 请检查 .env 中的 LLMOPS_API_BASE / LLMOPS_API_KEY / LLMOPS_APP_ID"
+
     # 2.组装请求头
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -237,7 +240,7 @@ def fetch_data(query: str):
 
     try:
         # 4.使用requests包发起post请求
-        response = requests.post(url, json=request_body, headers=headers)
+        response = requests.post(url, json=request_body, headers=headers, timeout=120)
         if response.status_code == 200:
             data = response.json()
             return data["data"]["answer"]
@@ -248,23 +251,66 @@ def fetch_data(query: str):
 
 
 def text_to_speech(text: str):
-    """将传递的文本转换成音频数据"""
+    """调用阿里百炼 TTS 把文案合成为音频，返回本地文件路径"""
+    text = (text or "").strip()
+    if not text:
+        raise gr.Error("文案内容为空，请先获取或填写文案")
+
+    # 1.从环境变量中获取百炼配置（默认 qwen-audio-3.1-tts-flash，走 TTS 专用接口）
+    api_key = os.getenv("DASHSCOPE_API_KEY")
+    tts_url = os.getenv(
+        "DASHSCOPE_TTS_URL",
+        "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer",
+    )
+    model = os.getenv("TTS_MODEL", "qwen-audio-3.1-tts-flash")
+    voice = os.getenv("TTS_VOICE", "longanhuan_v3.1")
+    if not api_key:
+        raise gr.Error("未配置 DASHSCOPE_API_KEY，请检查 .env")
+
+    # 2.组装请求（百炼原生接口，返回的是音频下载地址而不是字节流）
+    #    注意：qwen3-tts 系列认 language_type，qwen-audio-tts / cosyvoice 认 language_hints + format
+    if model.startswith("qwen3-tts"):
+        audio_input = {"text": text, "voice": voice, "language_type": "Chinese"}
+    else:
+        audio_input = {
+            "text": text,
+            "voice": voice,
+            "format": "mp3",
+            "sample_rate": 24000,
+            "language_hints": ["zh"],
+        }
+    payload = {"model": model, "input": audio_input}
     try:
-        client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_API_BASE"),
+        response = requests.post(
+            tts_url,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=120,
         )
-        response = client.audio.speech.create(
-            model="tts-1",
-            voice="alloy",
-            response_format="mp3",
-            input=text,
-        )
-        audio_file = Path(__file__).parent / f"storage/audio/{str(uuid.uuid4())}.mp3"
-        response.stream_to_file(audio_file)
-        return audio_file
+        if response.status_code != 200:
+            raise gr.Error(f"百炼返回 {response.status_code}：{response.text[:200]}")
+
+        # 3.取出音频（正常是 download url，个别模型直接给 base64）
+        audio_info = (response.json().get("output") or {}).get("audio") or {}
+        audio_bytes = b""
+        if audio_info.get("url"):
+            audio_bytes = requests.get(audio_info["url"], timeout=120).content
+        elif audio_info.get("data"):
+            audio_bytes = base64.b64decode(audio_info["data"])
+        if not audio_bytes:
+            raise gr.Error(f"百炼未返回音频数据：{response.text[:200]}")
+
+        # 4.落盘后交给 Audio 组件播放
+        audio_dir = Path(__file__).parent / "storage" / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        audio_file = audio_dir / f"{uuid.uuid4()}.mp3"
+        audio_file.write_bytes(audio_bytes)
+        return str(audio_file)
+    except gr.Error:
+        raise
     except Exception as e:
-        return f"语音生成失败: {str(e)}"
+        # Audio 输出只接受文件路径，返回字符串会被当成路径去读取而崩掉整个请求，这里改为弹窗报错
+        raise gr.Error(f"语音生成失败：{e}")
 
 
 with gr.Blocks() as demo:

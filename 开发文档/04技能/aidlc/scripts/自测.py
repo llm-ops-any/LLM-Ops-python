@@ -82,7 +82,7 @@ def write(path, text):
 
 
 def case_init(root):
-    """用例 1：初始化建出该有的目录、五份规则、状态快照。"""
+    """用例 1：初始化建出该有的目录、五份规则，且不建根 状态.md。"""
     p, out = run('初始化.py', root, '--entry', 'none', '--no-hooks', '--no-skill')
     say(p.returncode == 0, '初始化退出码 0', out[-200:])
     doc = os.path.join(root, '开发文档')
@@ -90,7 +90,8 @@ def case_init(root):
     say(not missing, '六个目录齐全', '缺：' + '、'.join(missing))
     absent = [r for r in RULES if not os.path.isfile(os.path.join(doc, '00规则', r))]
     say(not absent, '五份规则文件齐全', '缺：' + '、'.join(absent))
-    say(os.path.isfile(os.path.join(doc, '状态.md')), '项目级状态快照已建')
+    say(not os.path.isfile(os.path.join(doc, '状态.md')),
+        '不建根 状态.md（旧 AIDLC State 台账已废弃，状态看 _汇总/ + 各 CR）')
     say(not os.path.isdir(os.path.join(doc, '04技能', 'aidlc')),
         '--no-skill 时不复制技能副本')
     return doc

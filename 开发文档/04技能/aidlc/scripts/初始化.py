@@ -18,7 +18,7 @@
 做的事（幂等，已存在的一律跳过，绝不覆盖用户内容）
     1. 建 开发文档/{00规则,01需求,02缺陷,03技术债,04技能,_汇总}
     2. 00规则/ 五份规则文件 ← 技能模板（项目概述 / 团队配置 / 开发规范 / 文档结构 / 协作规范）
-    3. 开发文档/状态.md 快照（可选；每条 CR 的真实状态在 CR-*/00-状态.md）
+    3. 根 `开发文档/状态.md` **不建**（状态真相在 CR-*/00-状态.md，总览看 _汇总/状态.md）
     4. 技能副本 → 开发文档/04技能/aidlc（项目自包含，换机器/换 agent 都能跑）
     5. 入口锚点（--entry 决定写哪个，见下）
     6. git 钩子（clean merge / 冲突解决后提交 / rebase 收尾自动重建视图）
@@ -78,36 +78,11 @@ FINALIZE = {
                 '**单人作业**：保留第 1、5 节（取号 / 开工自检），第 2~4 节删掉，'
                 '并在 `文档结构.md` 写明「暂不建 + 为什么」；**多人并行**：全留，人编号表在 `团队配置.md`。'),
 }
-STATE = '''# AIDLC State
-
-## Current
-- Phase: INCEPTION
-- Stage: 未开始
-- Unit: -
-
-## Executed
-- [ ] workspace-detection
-
-## Extension Configuration
-| Extension | Enabled | Scope |
-|---|---|---|
-| security-baseline | no | - |
-| property-based-testing | no | - |
-| role-gates | yes | 见 00规则/团队配置.md 的审批模式 |
-| approve-continue | no | - |
-| audit-signature | yes | 取 git config |
-| doc-sync | yes | 仅关键变更 |
-
-## Gates
-| Gate | Status | Approved by | At |
-|---|---|---|---|
-| G1 需求定稿 | not-started | - | - |
-| G2 设计定稿 | not-started | - | - |
-| G3 代码合入 | not-started | - | - |
-
-## Identity
-- 当前角色：-（来源：团队配置.md 匹配 / 用户指定）
-'''
+# 2026-11-02：根 `开发文档/状态.md` **不再创建**。
+# 旧的 STATE 骨架（`# AIDLC State` + Current / Executed / Gates）会自然退化成「跨 CR 手写台账」，
+# 与「一条 CR 一个目录、全局视图由 汇总.py 算」直接冲突（四个存量项目实测腐化：
+# opcapp 35KB 流水账、葫芦岛两个同名「当前活跃 CR」标题）。
+# 状态真相：`<类型目录>/CR-*/00-状态.md`（老项目裸名 `状态.md`）；总览：`_汇总/状态.md`。
 
 
 def run_quiet(cmd, cwd):
@@ -414,15 +389,13 @@ def main():
         print('完成：只刷新了规则文件头，目录 / 状态 / 技能副本 / 锚点 / 钩子全部跳过。')
         return 0
 
-    # 3. 状态
+    # 3. 根 状态.md：**不创建**（2026-11-02）。状态真相在 <CR>/状态.md，总览由 汇总.py 算，
+    #    根上再放一份必然腐化；若从旧项目接管到已存在的，提示删掉而不是继续写。
     sp = os.path.join(doc, '状态.md')
     if os.path.exists(sp):
-        print('3 状态      已存在，跳过')
-    elif dry:
-        print('3 状态      将新建骨架')
+        print('3 根状态    发现 开发文档/状态.md —— 已废弃，建议删除（状态看 _汇总/状态.md + 各 CR）')
     else:
-        write(sp, STATE)
-        print('3 状态      已建骨架')
+        print('3 根状态    不创建（状态真相在 <CR>/状态.md，总览看 _汇总/状态.md）')
 
     # 4~5. 技能副本 + 锚点：交给 anchors 脚本（幂等、不覆盖原文）
     anchor = os.path.join(HERE, 'install-project-anchors.py')

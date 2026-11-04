@@ -6,7 +6,7 @@
 同类问题（技能副本落到项目根 `skills/`、装钩子不写 `.gitattributes`），共同点是「本机能跑、
 换台机器就静默失效，而且没有任何报错」。这类问题只能靠**主动体检**发现，靠人记住是不行的。
 
-检查 18 类（✓ 通过 / · 不适用或未建 / ⚠ 建议处理 / ✗ 有问题）：
+检查 20 类（✓ 通过 / · 不适用或未建 / ⚠ 建议处理 / ✗ 有问题）：
 
   1. 锚点          AGENTS.md 等有没有 AIDLC 标记段 —— 没有 ⇒ 技能根本不会被触发
   2. 技能副本      在 `开发文档/04技能/aidlc`（固定落点）；项目根有没有多余的 `skills/`
@@ -26,6 +26,10 @@
  16. 孤儿 CR       CR 目录缺 00-状态.md/01-需求.md/02-问题.md ⇒ 汇总会**静默跳过**它
  17. 页面          `_汇总/index.html` 在不在（md 有了但没页面 = 汇总只做了一半）
  18. CR 时间       `状态.md` 的 `创建` / `更新` 齐不齐、是不是 `YYYY-MM-DD HH:MM:SS`
+ 19. 团队配置      人编号有没有 ≥10（拼不出 8 位 CR 号）；git 里的提交者是不是都登记了
+                   —— 取号靠 email 查表，没登记就会卡住或乱猜（2026-11-04 加）
+ 20. 提交规范      最近 12 条提交是不是 `<type>(CR-<8位号>): 摘要`
+                   —— 格式写在 references 里没人读就等于没有（2026-11-04 加）
 
   文件名一律走 `_aidlc_common.find_cr_file()`：带编号（`01-需求.md`）与老裸名（`需求.md`）
   两种都认，所以老项目不迁移也能照常体检。
@@ -50,7 +54,7 @@ import time
 from _check_common import *  # noqa: F401,F403,E402
 from _check_meta import (check_anchors, check_skill_copy, check_version,  # noqa: E402
                           check_hooks, check_gitattributes, check_layout,
-                          check_rule_files, check_rules)
+                          check_rule_files, check_rules, check_team_git, check_commit_style)
 from _check_cr import (check_generated, check_baseline, check_numbers,  # noqa: E402
                         check_plan, check_resources, check_risks,
                         check_dead_rules, check_cr_times, check_orphan_cr)
@@ -70,6 +74,8 @@ def main():
     check_layout(rows)
     check_rule_files(rows)
     check_rules(rows)
+    check_team_git(rows)
+    check_commit_style(rows)
     check_generated(rows)
     check_numbers(rows)
     check_baseline(rows)

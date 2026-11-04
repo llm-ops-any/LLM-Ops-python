@@ -355,3 +355,139 @@ def check_rules(rows):
 
     if not any(r[1] == '规则文件' for r in rows):
         rows.append(('v', '规则文件', '%s：档位 %s、五档清单、测试三档、人编号齐全' % (rel, mode), ''))
+
+
+# 不强制「点 + TLD」：git 里真有人配出 `xpz.qq@.com` 这种残废地址（葫芦岛 2026-11-04），
+# 强制 TLD 会让那行登记形同不存在，自检一直喊「没登记」。
+EMAIL_RE = re.compile(r'[\w.+-]+@[\w.-]+')
+
+
+def _team_emails(text):
+    """从表格行里抓 (email, 人编号, 姓名)。表格列固定：角色｜姓名｜git email｜人编号｜说明。"""
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s.startswith('|'):
+            continue
+        cells = [c.strip() for c in s.strip('|').split('|')]
+        for i, c in enumerate(cells):
+            m = EMAIL_RE.search(c)
+            if not m:
+                continue
+            num = 0
+            if i + 1 < len(cells):
+                num = int(re.sub(r'[^0-9]', '', cells[i + 1]) or 0)
+            # 姓名去掉括号注释（「姜辉（个人邮箱）」和「姜辉」是同一个人，别当成重名冲突）
+            name = re.sub(r'[（(].*', '', cells[1] if len(cells) > 1 else '').strip()
+            out.append((m.group(0).lower(), num, name))
+            break
+    return out
+
+
+def check_team_git(rows):
+    """团队配置.md 登记的人 vs git 里的实际提交者（2026-11-04 加）。
+
+    两件事：
+    1. **人编号不能 ≥10** —— CR 号是 `人编号(1位)+年(1位)+月日(4位)+序号(2位)` 共 8 位，
+       编号 10 以上根本拼不出合法号。`初始化.py --refresh-team` 会无脑顺延（发射场实测排到 22），
+       所以必须自检兜住。
+    2. **git 里出现、表里没登记** —— 取号靠 email 查表，查不到就会卡住或乱猜，久了审计签署人对不上人。
+
+    只查「git 有、表没有」这一个方向：反方向（表里有、git 没提交）是正常的，新人刚登记还没提交。
+    同一个人多个邮箱是**合法**的（表里就该多行同编号），所以按 email 比对，不按姓名。
+    """
+    text = read(os.path.join(ROOT, RULE_FILE))
+    if not text:
+        return                      # 缺文件由 check_rules 报，不重复刷屏
+    pairs = _team_emails(text)
+    if not pairs:
+        rows.append(('w', '团队配置', '读不出角色表的 email 列',
+                     '表头保留「角色｜姓名｜git email｜人编号｜说明」五列 —— 取号靠它查表'))
+        return
+    registered = {e for e, _n, _m in pairs}
+
+    over = sorted({n for _e, n, _m in pairs if n > 9})
+    if over:
+        rows.append(('x', '团队配置', '人编号超出 1~9：%s' % '、'.join(map(str, over)),
+                     'CR 号只有 8 位、人编号占 1 位，≥10 拼不出合法号。'
+                     '历史贡献者的人编号写 `-`（不取号），不要顺着往下排'))
+
+    # 同一编号挂了不同姓名：要么把两个人错并成一个号（取号会撞），要么真同名 —— 都要人看一眼
+    by_num = {}
+    for _e, n, name in pairs:
+        if n:
+            by_num.setdefault(n, set()).add(name)
+    clash = sorted((n, sorted(v)) for n, v in by_num.items() if len(v) > 1)
+    if clash:
+        rows.append(('w', '团队配置', '同一人编号对应多个姓名：%s'
+                     % '；'.join('%d=%s' % (n, '/'.join(v)) for n, v in clash),
+                     '错并成一个号会让两人撞号段；真同名就把姓名写全（如「张伟（前端）」）区分'))
+
+    # 同一个 email 挂到了两个不同的人编号：取号查到哪个算哪个，CR 号会随机串
+    # （同一 email 多行本身是合法的：一人多角色、或 PO/DEV/REV 各一行）
+    seen, bad = {}, []
+    for e, n, _m in pairs:
+        seen.setdefault(e, set()).add(n)
+        if len(seen[e]) > 1:
+            bad.append(e)
+    if bad:
+        rows.append(('w', '团队配置', '%d 个邮箱对应多个不同编号：%s'
+                     % (len(set(bad)), '、'.join(sorted(set(bad))[:3])),
+                     '同一个人所有行必须填同一个人编号；编号不同 ⇒ 取号时按哪行全凭运气'))
+
+    if not is_repo():
+        rows.append(('d', '团队配置', '不是 git 仓库，跳过提交者比对', ''))
+        return
+    r = git('log', '--all', '--format=%ae')
+    if r.returncode != 0:
+        rows.append(('d', '团队配置', 'git log 读不到，跳过提交者比对', ''))
+        return
+    cnt = {}
+    for e in (r.stdout or '').splitlines():
+        e = e.strip().lower()
+        if e:
+            cnt[e] = cnt.get(e, 0) + 1
+    if not cnt:
+        rows.append(('d', '团队配置', 'git 里还没有提交，无从比对', ''))
+        return
+
+    missing = sorted(((c, e) for e, c in cnt.items() if e not in registered), reverse=True)
+    if missing:
+        head = '、'.join('%s(%d)' % (e, c) for c, e in missing[:5])
+        more = ' 等 %d 个' % len(missing) if len(missing) > 5 else ''
+        rows.append(('w', '团队配置', 'git 里 %d 个提交者没登记：%s%s' % (len(missing), head, more),
+                     '补进 `00规则/团队配置.md`：要走流程的放角色表、给 1~9 的空号；'
+                     '历史作者放「历史贡献者」表、人编号写 `-`；agent 提交身份放「AI 代理」表'))
+        return
+    rows.append(('v', '团队配置', '%d 个 git 提交者全部已登记（表里 %d 个邮箱）' % (len(cnt), len(registered)), ''))
+
+
+COMMIT_RE = re.compile(r'^(?:feat|fix|refactor|docs|perf|chore|revert)\((?:CR-\d{8}|repo|aidlc)\): \S')
+
+
+def check_commit_style(rows):
+    """提交信息有没有按 `<type>(CR-<8位号>): <中文摘要>` 写（2026-11-04 加）。
+
+    为什么自检要管提交：规范写在 `references/git-提交.md` 里，但**没人读就不会执行**。
+    发射场实测：写进 `00规则/开发规范.md` 之后，近 200 条提交里带 CR 号的 **0 条** ——
+    全靠自觉的规则等于没有。只查最近 12 条：噪声小，纠偏快，历史提交不追究。
+    """
+    if not is_repo():
+        rows.append(('d', '提交规范', '不是 git 仓库，跳过', ''))
+        return
+    r = git('log', '-12', '--no-merges', '--format=%s')
+    if r.returncode != 0:
+        rows.append(('d', '提交规范', 'git log 读不到，跳过', ''))
+        return
+    subs = [s.strip() for s in (r.stdout or '').splitlines() if s.strip()]
+    if not subs:
+        rows.append(('d', '提交规范', '还没有提交', ''))
+        return
+    bad = [s for s in subs if not COMMIT_RE.match(s)]
+    if not bad:
+        rows.append(('v', '提交规范', '最近 %d 条提交都带 CR 号' % len(subs), ''))
+        return
+    rows.append(('w', '提交规范', '最近 %d 条里有 %d 条没按 `<type>(CR-<8位号>): 摘要` 写（如「%s」）'
+                 % (len(subs), len(bad), bad[0][:36]),
+                 '历史提交不用改；**新提交**带 8 位 CR 号，仓库杂务用 `(repo)` '
+                 '—— 细则见 `references/git-提交.md`'))

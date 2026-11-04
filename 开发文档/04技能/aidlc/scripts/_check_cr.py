@@ -298,16 +298,22 @@ def _started(cr):
     """这条 CR 是否已经开工。
 
     不算开工的：`not-started`（占了号没动）、`cancelled`（撤回）、
-    **`awaiting-approval`（还在等 G1 批准，一个字都没写）**、阶段空。
+    **`awaiting-approval`（还在等 G1 批准，一个字都没写）**、阶段空、
+    **`requirement`（需求都还没定稿，谈不上施工图）**。
 
     为什么要把 awaiting-approval 排除：2026-10-29 实测（中海油 haiyou）某条技术债
     阶段写 `awaiting-approval`、下一步写「PO 审完批准，批准后本轮仍不实施」——
     它连需求都还没批，却被判「已开工却没有执行计划」，报了一条假 ✗。
     开工的标志是**进入设计/编码**，不是「等批」。
+
+    为什么要把 requirement 排除：2026-11-04 实测（opcapp CR-16110301）阶段写
+    `inception / requirements-analysis`、门禁 `G1 pending` —— 需求正文还在等 PO 给 6 个口径，
+    却被判「已开工却缺 06-执行计划」。执行计划的判据是「需求定稿后、动手前」，需求分析阶段当然没有。
     """
     stage = _stage(cr)
     return not ('not-started' in stage or 'cancelled' in stage
-                or 'awaiting-approval' in stage or not stage)
+                or 'awaiting-approval' in stage or not stage
+                or 'requirement' in stage)
 
 
 def _closed(cr):

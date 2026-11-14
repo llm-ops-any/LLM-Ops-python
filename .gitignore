@@ -22,6 +22,8 @@ ui/dist/
 # Docker容器服务相关
 docker/volumes/
 docker/.env
+# 本机数据快照（含真实账号邮箱、密码 hash、api_key 密文）：只在本机留档，不进版本库
+docker/postgres/llmops_data.sql
 .venv
 开发文档/_汇总/
 __pycache__/

@@ -14,8 +14,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _check_common import *  # noqa: F401,F403
 from _check_common import (ROOT, HERE, SELF, SKILL_REL, MARK, LAYOUT, REQUIRED_DIRS,  # noqa: E402
-                           git, read, is_repo, proj_skill, _skill_version, _vtuple,
-                           HOST_SKILLS)
+                           git, read, is_repo, proj_skill)
 
 def check_anchors(rows):
     # 先看各平台 —— 有的项目刻意不让 AGENTS.md 接管（比如上游仓库自有 AGENTS.md，
@@ -86,48 +85,6 @@ def check_skill_copy(rows):
     if pyc:
         rows.append(('w', '技能副本', '技能副本里有 __pycache__',
                      '会让副本与技能源 diff 出差异；删掉（别提交）'))
-
-
-def check_version(rows):
-    """副本 SKILL.md 有没有 version；有宿主技能时比一下新旧。
-
-    为什么要它：项目里的是**复制品**，技能升级后没有任何机制通知项目「你这份旧了」。
-    2026-10-29 五个项目的副本内容已各不相同，全靠人记 —— 人记不住。
-    """
-    sk = proj_skill()
-    if not sk:
-        rows.append(('d', '版本', '项目里没有技能副本，跳过', '复制副本后才能比对版本'))
-        return
-    path = os.path.join(sk, 'SKILL.md')
-    if not os.path.isfile(path):
-        return
-    mine = _skill_version(path)
-    if not mine:
-        rows.append(('w', '版本', '技能副本 SKILL.md 没有 version 字段',
-                     '在 frontmatter 加 `version: x.y.z` —— 否则技能升级后，'
-                     '项目里这份旧副本没人能判断要不要同步'))
-        return
-
-    host = None
-    for p in HOST_SKILLS:
-        p2 = os.path.expanduser(p)
-        if os.path.isfile(p2):
-            host = (_skill_version(p2), p2)
-            break
-    if not host:
-        rows.append(('v', '版本', '副本版本 %s（本机没找到宿主技能，无从比对）' % mine, ''))
-        return
-    theirs, where = host
-    if not theirs:
-        rows.append(('v', '版本', '副本版本 %s（宿主未标版本：%s）' % (mine, where), ''))
-    elif _vtuple(mine) < _vtuple(theirs):
-        rows.append(('w', '版本', '副本 %s 落后于宿主 %s' % (mine, theirs),
-                     '从 %s 整份覆盖副本（覆盖前确认项目里没有本地改动）' % where))
-    elif _vtuple(mine) == _vtuple(theirs):
-        rows.append(('v', '版本', '副本与宿主一致：%s' % mine, ''))
-    else:
-        rows.append(('w', '版本', '副本 %s 比宿主 %s 新' % (mine, theirs),
-                     '把副本的改动合回宿主技能，否则以后重建项目会退回旧版'))
 
 
 def check_hooks(rows):

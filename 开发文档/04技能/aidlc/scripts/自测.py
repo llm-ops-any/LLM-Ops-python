@@ -201,6 +201,28 @@ def case_board(doc, root):
         '看板行含筛选所需字段')
 
 
+def case_fingerprint(root):
+    """用例 11：版本指纹 —— VERSION 与内容一致；改一个字节就能被抓出来。
+
+    这是「别处用的是不是新版」的唯一判据：版本号是手写的，实测出现过
+    「五个副本内容各不相同却都标 2.6.0」。指纹由内容决定，改一个字符就该变。
+    """
+    p, out = run('版本.py', '--verify')
+    say(p.returncode == 0, '本技能 VERSION 与内容一致', out[-300:])
+
+    twin = os.path.join(root, 'skill-twin')
+    shutil.copytree(SKILL, twin, ignore=shutil.ignore_patterns('__pycache__'))
+    p, out = run('版本.py', '--check', twin)
+    say(p.returncode == 0, '同内容副本判为同一版', out[-300:])
+
+    io.open(os.path.join(twin, 'references', '阶段路由.md'), 'a', encoding='utf-8').write(
+        '\n<!-- 自测故意改一行 -->\n')
+    p, out = run('版本.py', '--verify', '--dir', twin)
+    say(p.returncode == 1 and '不一致' in out, '改一个文件后 verify 报不一致', out[-300:])
+    p, out = run('版本.py', '--check', twin)
+    say(p.returncode == 1, '改过的副本判为不同版', out[-300:])
+
+
 def main():
     print('AIDLC 自测  %s' % SKILL)
     print('-' * 60)
@@ -219,6 +241,8 @@ def main():
         print('用例 8-9：技能自身')
         case_version_field()
         case_size()
+        print('用例 10-11：版本指纹')
+        case_fingerprint(root)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

@@ -10,7 +10,7 @@
 
   1. 锚点          AGENTS.md 等有没有 AIDLC 标记段 —— 没有 ⇒ 技能根本不会被触发
   2. 技能副本      在 `开发文档/04技能/aidlc`（固定落点）；项目根有没有多余的 `skills/`
-  3. 版本          副本 SKILL.md 的 version；有宿主技能时比新旧（副本是复制品，没人通知它过期）
+  3. 版本          副本内容指纹与 `VERSION` 对不对得上（对不上=改了没升版）；与宿主技能比指纹
   4. 钩子          `core.hooksPath` 指向对不对；三个钩子在不在；首行是不是 LF
   5. .gitattributes LF 保护三行齐不齐 —— 缺了换机器 clone 后钩子静默失效
   6. 布局          五个编号目录齐不齐
@@ -52,9 +52,10 @@ import sys
 import time
 
 from _check_common import *  # noqa: F401,F403,E402
-from _check_meta import (check_anchors, check_skill_copy, check_version,  # noqa: E402
+from _check_meta import (check_anchors, check_skill_copy,  # noqa: E402
                           check_hooks, check_gitattributes, check_layout,
                           check_rule_files, check_rules, check_team_git, check_commit_style)
+from _check_version import check_version  # noqa: E402
 from _check_cr import (check_generated, check_baseline, check_numbers,  # noqa: E402
                         check_plan, check_resources, check_risks,
                         check_dead_rules, check_cr_times, check_orphan_cr)
@@ -109,10 +110,6 @@ def main():
         return 2
     print('全绿。')
     return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())
 
 
 if __name__ == '__main__':

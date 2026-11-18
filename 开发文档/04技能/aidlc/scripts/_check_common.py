@@ -116,7 +116,10 @@ def _skill_version(path):
 
 
 # 宿主技能（「真身」）可能落在这几个位置；项目副本是复制品。
+# `~/.codebuddy/skills/aidlc` 是 2026-11-18 补上的全局分发点 —— 此前清单只记项目副本，
+# 这份全局安装（不受 git 管理）四次全量同步都没覆盖到，停了整整一个月。
 HOST_SKILLS = (
+    '~/.codebuddy/skills/aidlc/SKILL.md',
     '~/.workbuddy/skills/aidlc/SKILL.md',
     '~/.claude/skills/aidlc/SKILL.md',
     '~/.codex/skills/aidlc/SKILL.md',

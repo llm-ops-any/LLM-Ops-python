@@ -1,6 +1,6 @@
 ---
 name: aidlc
-version: 2.6.2
+version: 2.6.3
 updated: 2026-11-18
 description: >
   AIDLC（AI-Driven Development Life Cycle）——把需求拆成「Inception 启动 → Construction 构建 →
